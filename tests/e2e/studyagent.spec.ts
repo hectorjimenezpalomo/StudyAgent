@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import path from 'node:path';
 
 const email = process.env.E2E_USER_EMAIL;
 const password = process.env.E2E_USER_PASSWORD;
@@ -14,13 +15,7 @@ test('login, upload PDF, ask, and reload persisted chat', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Documentos' })).toBeVisible();
 
   const fileInput = page.locator('input[type="file"]');
-  await fileInput.setInputFiles({
-    name: 'studyagent-demo.pdf',
-    mimeType: 'application/pdf',
-    buffer: Buffer.from(
-      '%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF'
-    ),
-  });
+  await fileInput.setInputFiles(path.join(process.cwd(), 'tests/fixtures/studyagent-demo.pdf'));
 
   await expect(page.getByText('studyagent-demo.pdf')).toBeVisible();
   await expect(page.getByText(/Estado: ready/)).toBeVisible({ timeout: 60_000 });

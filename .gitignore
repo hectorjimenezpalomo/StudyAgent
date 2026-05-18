@@ -14,7 +14,3 @@ test-results
 .turbo
 .vercel
 *.tsbuildinfo
-
-# AI agent local guides
-AGENTS.md
-CODEX.md

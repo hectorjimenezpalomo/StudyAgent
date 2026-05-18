@@ -85,5 +85,7 @@ Video Loom: pendiente de grabar tras desplegar la version final.
 ## Documentacion
 
 - `AGENTS.md`: reglas obligatorias de implementacion.
+- `CODEX.md`: briefing especifico para Codex.
+- `CLAUDE.md`: briefing equivalente para Claude Code.
 - `ARCHITECTURE.md`: tablas, rutas, tipos y herramientas.
 - `ROADMAP.md`: fases del proyecto.

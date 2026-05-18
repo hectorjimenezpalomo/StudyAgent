@@ -2,7 +2,6 @@ import { redirect } from 'next/navigation';
 import {
   estimateTokensFromText,
   extractStoredText,
-  type AppSupabaseClient,
 } from '@/lib/chat/persistence';
 import { AI_CONFIG } from '@/lib/ai/config';
 import { createClient } from '@/lib/supabase/server';
@@ -28,7 +27,7 @@ function formatUsd(value: number) {
 }
 
 export default async function AdminPage() {
-  const supabase = (await createClient()) as AppSupabaseClient;
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();

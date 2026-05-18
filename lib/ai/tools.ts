@@ -20,14 +20,14 @@ export type AgentToolContext = {
   userId: string;
   allowedDocumentIds: string[];
   supabase: {
-    rpc(name: 'match_chunks', args: MatchChunksArgs): Promise<QueryResult<ChunkResult[]>>;
+    rpc(name: 'match_chunks', args: MatchChunksArgs): PromiseLike<QueryResult<ChunkResult[]>>;
     from(table: 'chunks'): {
       select(columns: string): {
         eq(column: string, value: string): {
           order(
             column: string,
             options: { ascending: boolean }
-          ): Promise<QueryResult<ChunkRow[]>>;
+          ): PromiseLike<QueryResult<ChunkRow[]>>;
         };
       };
     };

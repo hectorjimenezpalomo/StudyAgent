@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { ChatInterface } from '@/components/chat/ChatInterface';
 import {
   messageRowToUiMessage,
-  type AppSupabaseClient,
   type ConversationSummary,
   type StoredUiMessage,
 } from '@/lib/chat/persistence';
@@ -21,7 +20,7 @@ export default async function ChatPage({
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const supabase = (await createClient()) as AppSupabaseClient;
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();

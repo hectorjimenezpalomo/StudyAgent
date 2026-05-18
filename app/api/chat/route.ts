@@ -8,7 +8,6 @@ import {
   getOrCreateConversation,
   persistChatMessage,
   touchConversation,
-  type AppSupabaseClient,
 } from '@/lib/chat/persistence';
 import { createClient } from '@/lib/supabase/server';
 import type { Tables } from '@/lib/supabase/types';
@@ -77,7 +76,7 @@ function getLastUserMessage(messages: z.infer<typeof messageSchema>[]) {
 }
 
 export async function POST(req: Request) {
-  const supabase = (await createClient()) as AppSupabaseClient;
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();

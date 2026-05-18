@@ -1,7 +1,7 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Database, Json, Tables } from '@/lib/supabase/types';
+import type { createClient } from '@/lib/supabase/server';
+import type { Json, Tables } from '@/lib/supabase/types';
 
-export type AppSupabaseClient = SupabaseClient<Database>;
+export type AppSupabaseClient = Awaited<ReturnType<typeof createClient>>;
 
 export type ConversationSummary = Pick<
   Tables<'conversations'>,

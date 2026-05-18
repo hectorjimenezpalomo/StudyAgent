@@ -17,6 +17,12 @@ const uploadSchema = z.object({
 });
 
 const titleSchema = z.string().trim().min(1).max(255);
+const PDF_SIGNATURE = '%PDF-';
+
+async function hasPdfSignature(file: File) {
+  const header = await file.slice(0, PDF_SIGNATURE.length).arrayBuffer();
+  return new TextDecoder().decode(header) === PDF_SIGNATURE;
+}
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -44,6 +50,10 @@ export async function POST(req: Request) {
   }
 
   const { file } = parsed.data;
+  if (!(await hasPdfSignature(file))) {
+    return Response.json({ error: 'Solo se aceptan PDFs validos' }, { status: 400 });
+  }
+
   const documentId = crypto.randomUUID();
   const storagePath = `${user.id}/${documentId}.pdf`;
   const titleResult = titleSchema.safeParse(file.name);
@@ -91,3 +101,7 @@ export async function POST(req: Request) {
 
   return Response.json({ document_id: documentId });
 }
+
+export const __uploadTestUtils = {
+  hasPdfSignature,
+};
