@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { DeleteDocumentButton } from '@/components/documents/DeleteDocumentButton';
+import { DocumentsPolling } from '@/components/documents/DocumentsPolling';
 import { UploadButton } from '@/components/documents/UploadButton';
 import { createClient } from '@/lib/supabase/server';
 import type { Tables } from '@/lib/supabase/types';
@@ -40,6 +41,9 @@ export default async function DocumentsPage() {
     .select('*')
     .order('created_at', { ascending: false });
   const documents = (data ?? []) as DocumentRow[];
+  const hasActiveIngestion = documents.some((doc) =>
+    ['pending', 'ingesting'].includes(doc.status)
+  );
 
   if (error) {
     console.error('[documents/page] select', error);
@@ -47,6 +51,7 @@ export default async function DocumentsPage() {
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-8">
+      <DocumentsPolling enabled={hasActiveIngestion} />
       <div className="flex flex-col gap-4 border-b border-slate-200 pb-6 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-950">
@@ -80,7 +85,11 @@ export default async function DocumentsPage() {
                     <span>Estado: {doc.status}</span>
                     <span>{formatBytes(doc.size_bytes)}</span>
                     <span>{formatDate(doc.created_at)}</span>
+                    {doc.page_count ? <span>{doc.page_count} paginas</span> : null}
                   </div>
+                  {doc.status === 'error' && doc.error_message ? (
+                    <p className="mt-2 text-sm text-red-700">{doc.error_message}</p>
+                  ) : null}
                 </div>
                 <DeleteDocumentButton documentId={doc.id} title={doc.title} />
               </li>

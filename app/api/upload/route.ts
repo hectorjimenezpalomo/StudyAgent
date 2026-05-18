@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { AI_CONFIG } from '@/lib/ai/config';
+import { ingestDocument } from '@/lib/ai/ingest';
 import { createClient } from '@/lib/supabase/server';
 
 export const maxDuration = 60;
@@ -83,6 +84,10 @@ export async function POST(req: Request) {
 
     return Response.json({ error: 'Error al subir PDF' }, { status: 500 });
   }
+
+  void ingestDocument(documentId).catch((error) => {
+    console.error('[api/upload] ingest', error);
+  });
 
   return Response.json({ document_id: documentId });
 }
