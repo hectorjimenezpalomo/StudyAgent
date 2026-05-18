@@ -1,8 +1,8 @@
 # ROADMAP
 
-Plan de implementación por fases. Cada fase es independiente y demoable. No saltar fases; cada una asume que la anterior funciona.
+Plan de implementacion por fases. Cada fase es independiente y demoable. No saltar fases; cada una asume que la anterior funciona.
 
-## Fase 0 — Bootstrap (ya hecho en el esqueleto)
+## Fase 0 - Bootstrap
 
 - [x] Estructura de carpetas
 - [x] `package.json` con dependencias fijadas
@@ -11,79 +11,63 @@ Plan de implementación por fases. Cada fase es independiente y demoable. No sal
 - [x] Migraciones SQL de Supabase (`001_initial_schema.sql`, `002_match_chunks.sql`)
 - [x] `.env.example`
 - [x] Tipos base en `lib/supabase/types.ts` y `types/index.ts`
-- [x] Stubs de rutas API y páginas con tipos correctos
+- [x] Stubs de rutas API y paginas con tipos correctos
 - [x] System prompt base en `lib/ai/prompts.ts`
-- [x] Definición de herramientas (esqueletos) en `lib/ai/tools.ts`
+- [x] Definicion de herramientas en `lib/ai/tools.ts`
 
-## Fase 1 — Auth y subida de PDFs (objetivo: poder subir un PDF y verlo listado)
+## Fase 1 - Auth y subida de PDFs
 
-- [ ] Configurar clientes Supabase en `lib/supabase/client.ts` y `server.ts` siguiendo el patrón `@supabase/ssr`
-- [ ] Página `/login` con Supabase Auth UI o formulario propio (email + Google opcional)
-- [ ] Middleware `middleware.ts` que redirige a `/login` rutas protegidas
-- [ ] Página `/documents`: lista PDFs del usuario y permite subir
-- [ ] Ruta `POST /api/upload`:
-  - [ ] Validar tamaño y mime-type
-  - [ ] Guardar archivo en Supabase Storage en bucket `documents/<user_id>/<doc_id>.pdf`
-  - [ ] Insertar fila en `documents` con `status: 'pending'`
-  - [ ] Devolver `{ document_id }`
-- [ ] Ruta `DELETE /api/documents/[id]`: borra storage + fila
+- [x] Configurar clientes Supabase en `lib/supabase/client.ts` y `server.ts` con `@supabase/ssr`
+- [x] Pagina `/login` con formulario email/password
+- [x] Middleware que redirige a `/login` rutas protegidas
+- [x] Pagina `/documents`: lista PDFs del usuario y permite subir
+- [x] Ruta `POST /api/upload`: valida PDF, crea fila, sube a Storage y devuelve `{ document_id }`
+- [x] Ruta `DELETE /api/documents/[id]`: borra storage + fila
 
-## Fase 2 — Ingestion: extraer texto, chunkear, embebir
+## Fase 2 - Ingestion: extraer texto, chunkear, embebir
 
-- [ ] `lib/ai/chunker.ts`: función `chunkText(text: string): Chunk[]` con tamaño 700 tokens y solape 100
-- [ ] `lib/ai/embeddings.ts`: función `embed(texts: string[]): Promise<number[][]>` que llama a OpenAI en batch (hasta 100 inputs por llamada)
-- [ ] `lib/ai/ingest.ts`: función `ingestDocument(documentId: string)` que:
-  - [ ] Descarga el PDF de Storage
-  - [ ] Extrae texto con `pdf-parse`
-  - [ ] Chunkea
-  - [ ] Embedea
-  - [ ] Inserta filas en `chunks`
-  - [ ] Actualiza `documents.status = 'ready'`
-- [ ] Llamar a `ingestDocument` desde `POST /api/upload` después de guardar el archivo
-- [ ] En la UI, mostrar estado del documento (`pending`, `ready`, `error`) con polling cada 2s mientras esté `pending`
+- [x] `lib/ai/chunker.ts`: `chunkText(text: string)` con 700 tokens y solape 100
+- [x] `lib/ai/embeddings.ts`: embeddings en batches de hasta 100 inputs
+- [x] `lib/ai/ingest.ts`: descarga PDF, extrae texto, chunkea, embebe, inserta chunks y marca `ready`
+- [x] Llamar a `ingestDocument` desde `POST /api/upload`
+- [x] UI con estados `pending`, `ingesting`, `ready`, `error` y polling
 
-## Fase 3 — Chat con RAG (sin agente todavía)
+## Fase 3 - Chat con RAG manual
 
-- [ ] Página `/chat`: interfaz de chat con `useChat` del AI SDK
-- [ ] Ruta `POST /api/chat`:
-  - [ ] Recibe `messages`
-  - [ ] Toma el último mensaje del usuario, lo embedea
-  - [ ] Llama a `match_chunks` con el embedding del usuario
-  - [ ] Construye el prompt con los chunks como contexto (formato definido en `lib/ai/prompts.ts`)
-  - [ ] Llama a `streamText` con el prompt y devuelve el stream
-- [ ] En la UI, mostrar las fuentes citadas debajo de cada respuesta (extraer de los chunks usados)
+- [x] Pagina `/chat` con `useChat`
+- [x] Ruta `POST /api/chat` con RAG manual contra `match_chunks`
+- [x] Respuestas streameadas con citas `[Fuente N]`
 
-## Fase 4 — Agente con tool calling (el salto cualitativo)
+## Fase 4 - Agente con tool calling
 
-- [ ] Convertir `/api/chat` a usar `streamText` con `tools` en lugar de RAG manual
-- [ ] Implementar las herramientas de `lib/ai/tools.ts`:
-  - [ ] `search_documents(query, document_ids?)`: hace el RAG y devuelve chunks
-  - [ ] `generate_quiz(topic, num_questions)`: hace RAG → pide al modelo que genere preguntas con respuestas
-  - [ ] `generate_summary(document_id, length)`: trae todo el doc, lo pide resumir
-  - [ ] `generate_flashcards(topic, num_cards)`: RAG + generación de pares pregunta/respuesta
-  - [ ] `explain_concept(concept, level)`: RAG + explicación adaptada al nivel
-- [ ] El system prompt se actualiza para explicar al modelo qué herramientas tiene y cuándo usarlas
-- [ ] UI: componente `ToolCallDisplay.tsx` que muestra cuando el agente invoca una herramienta, qué argumentos pasó y qué devolvió
-- [ ] Quizzes y flashcards renderizan en burbujas especiales en la UI, no como texto plano
+- [x] Convertir `/api/chat` a `streamText` con `tools`
+- [x] Implementar `search_documents`
+- [x] Implementar `generate_quiz`
+- [x] Implementar `generate_summary`
+- [x] Implementar `generate_flashcards`
+- [x] Implementar `explain_concept`
+- [x] Mantener system prompt del agente en `lib/ai/prompts.ts`
+- [x] Mostrar tool calls con `ToolCallDisplay`
+- [x] Renderizar quizzes y flashcards en burbujas especiales
 
-## Fase 5 — Pulido y despliegue
+## Fase 5 - Pulido y preparacion de demo
 
-- [ ] Página de inicio (`/`) con explicación del producto, capturas y CTA
-- [ ] Persistencia de conversaciones en `conversations` y `messages` para que el usuario pueda volver a hilos pasados
-- [ ] Métricas básicas: contar tokens por mensaje, mostrar coste estimado en el panel de admin (oculto detrás de un flag de email)
-- [ ] Logs estructurados con prefijos consistentes (`[api/chat]`, `[ai/ingest]`, ...) para que sean grepables
-- [ ] Tests:
-  - [ ] `vitest` para `chunker.ts`, `embeddings.ts` mock, validación de schemas zod
-  - [ ] `playwright` con un test e2e: login con cuenta de prueba → subir PDF → preguntar algo → ver respuesta
-- [ ] README con vídeo demo de 2-3 minutos en Loom
-- [ ] Despliegue en Vercel con variables de entorno configuradas
-- [ ] Dos o tres PDFs públicos de ejemplo precargados en una cuenta de demo (con `DEMO_USER_EMAIL` en `.env`) para que un reclutador pueda probar sin subir sus propios documentos
+- [x] Pagina de inicio (`/`) con explicacion del producto, preview y CTA
+- [x] Persistencia de conversaciones en `conversations` y `messages`
+- [x] APIs `GET /api/conversations` y `GET /api/conversations/[id]`
+- [x] Historial en `/chat` y boton de nuevo chat
+- [x] Metricas basicas en `/admin` protegidas por `ADMIN_EMAILS`
+- [x] Logs estructurados con prefijos consistentes
+- [x] Tests Vitest para rutas y herramientas
+- [x] Playwright E2E opt-in para login, upload, chat y recarga
+- [x] README con setup, despliegue y placeholder de Loom
+- [x] Variables de demo/admin/e2e en `.env.example`
 
-## Fuera de alcance (no hacer en esta primera versión)
+## Fuera de alcance
 
-- Multi-modal (visión, audio)
-- Anki export real (las flashcards generadas se quedan en la UI)
+- Multi-modal (vision, audio)
+- Anki export real
 - Compartir documentos entre usuarios
 - Modelos locales con Ollama
-- Internacionalización
+- Internacionalizacion
 - Sistema de planes/pagos

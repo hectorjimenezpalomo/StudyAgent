@@ -9,7 +9,7 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
-const PROTECTED_PREFIXES = ['/chat', '/documents'];
+const PROTECTED_PREFIXES = ['/chat', '/documents', '/admin'];
 const AUTH_ROUTES = ['/login'];
 
 type CookieToSet = {

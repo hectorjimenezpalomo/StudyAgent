@@ -1,10 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { streamText } from 'ai';
 import { createAgentTools } from '@/lib/ai/tools';
+import {
+  getOrCreateConversation,
+  persistChatMessage,
+  touchConversation,
+} from '@/lib/chat/persistence';
 import { SYSTEM_PROMPT_AGENT } from '@/lib/ai/prompts';
 import { createClient } from '@/lib/supabase/server';
 import { AI_CONFIG } from '@/lib/ai/config';
 import { POST, __chatTestUtils } from './route';
+
+const testState = vi.hoisted(() => ({
+  finishPromise: undefined as Promise<void> | undefined,
+  conversationId: '55555555-5555-4555-8555-555555555555',
+}));
 
 vi.mock('@ai-sdk/openai', () => ({
   openai: vi.fn((model: string) => ({ model })),
@@ -12,7 +22,7 @@ vi.mock('@ai-sdk/openai', () => ({
 
 vi.mock('ai', () => ({
   convertToCoreMessages: vi.fn((messages: unknown) => messages),
-  createDataStreamResponse: vi.fn(({ execute }) => {
+  createDataStreamResponse: vi.fn(({ execute, headers }) => {
     const chunks: string[] = [];
     execute({
       write: (value: string) => chunks.push(value),
@@ -22,11 +32,21 @@ vi.mock('ai', () => ({
       merge: vi.fn(),
       onError: undefined,
     });
-    return new Response(chunks.join(''));
+    return new Response(chunks.join(''), { headers });
   }),
   formatDataStreamPart: vi.fn((_type: string, value: string) => value),
-  streamText: vi.fn(() => ({
-    toDataStreamResponse: vi.fn(() => new Response('model-stream')),
+  streamText: vi.fn(
+    (options: { onFinish?: (event: unknown) => Promise<void> | void }) => ({
+      toDataStreamResponse: vi.fn((responseOptions?: { headers?: HeadersInit }) => {
+      testState.finishPromise = Promise.resolve(
+        options.onFinish?.({
+          text: 'Respuesta del asistente',
+          toolCalls: [{ toolCallId: 'call-1', toolName: 'search_documents', args: {} }],
+          toolResults: [{ toolCallId: 'call-1', result: { chunks: [] } }],
+        })
+      );
+      return new Response('model-stream', { headers: responseOptions?.headers });
+    }),
   })),
 }));
 
@@ -44,7 +64,17 @@ vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn(),
 }));
 
+vi.mock('@/lib/chat/persistence', () => ({
+  getOrCreateConversation: vi.fn(async () => ({
+    conversationId: testState.conversationId,
+    error: null,
+  })),
+  persistChatMessage: vi.fn(async () => ({ ok: true, error: null })),
+  touchConversation: vi.fn(async () => undefined),
+}));
+
 const USER_ID = '22222222-2222-4222-8222-222222222222';
+const CONVERSATION_ID = testState.conversationId;
 
 type MockSupabaseOptions = {
   user?: { id: string } | null;
@@ -96,6 +126,7 @@ function chatRequest(body: unknown) {
 describe('POST /api/chat', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    testState.finishPromise = undefined;
   });
 
   it('rechaza usuarios no autenticados', async () => {
@@ -125,8 +156,20 @@ describe('POST /api/chat', () => {
 
     expect(response.status).toBe(200);
     expect(await response.text()).toContain(__chatTestUtils.NO_READY_DOCUMENTS_MESSAGE);
+    expect(response.headers.get('x-conversation-id')).toBe(CONVERSATION_ID);
     expect(createAgentTools).not.toHaveBeenCalled();
     expect(streamText).not.toHaveBeenCalled();
+    expect(persistChatMessage).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ role: 'user', text: 'Que sabes?' })
+    );
+    expect(persistChatMessage).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        role: 'assistant',
+        text: __chatTestUtils.NO_READY_DOCUMENTS_MESSAGE,
+      })
+    );
   });
 
   it('crea agente con tools, prompt del sistema y maxSteps', async () => {
@@ -140,6 +183,8 @@ describe('POST /api/chat', () => {
 
     expect(response.status).toBe(200);
     expect(await response.text()).toBe('model-stream');
+    expect(response.headers.get('x-conversation-id')).toBe(CONVERSATION_ID);
+    await testState.finishPromise;
     expect(createAgentTools).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: USER_ID,
@@ -158,6 +203,40 @@ describe('POST /api/chat', () => {
         }),
         maxSteps: AI_CONFIG.agent.maxSteps,
       })
+    );
+    expect(persistChatMessage).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ role: 'user', text: 'Hazme un quiz' })
+    );
+    expect(persistChatMessage).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        role: 'assistant',
+        text: 'Respuesta del asistente',
+        toolCalls: expect.any(Array),
+        toolResults: expect.any(Array),
+      })
+    );
+    expect(touchConversation).toHaveBeenCalledWith(expect.any(Object), CONVERSATION_ID);
+  });
+
+  it('reutiliza conversation_id existente si viene en el body', async () => {
+    mockSupabase({
+      readyDocuments: [{ id: '33333333-3333-4333-8333-333333333333' }],
+    });
+
+    await POST(
+      chatRequest({
+        conversation_id: CONVERSATION_ID,
+        messages: [{ role: 'user', content: 'Continua' }],
+      })
+    );
+
+    expect(getOrCreateConversation).toHaveBeenCalledWith(
+      expect.any(Object),
+      USER_ID,
+      CONVERSATION_ID,
+      'Continua'
     );
   });
 });

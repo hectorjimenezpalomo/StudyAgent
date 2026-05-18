@@ -102,9 +102,10 @@ Bucket `documents` privado. Política: `(storage.foldername(name))[1] = auth.uid
 | `GET` | `/api/documents` | — | `Document[]` | Lista documentos del usuario |
 | `DELETE` | `/api/documents/[id]` | — | `{ ok: true }` | Borra documento y chunks asociados |
 | `GET` | `/api/documents/[id]/status` | — | `{ status, error_message? }` | Para polling durante ingesta |
-| `POST` | `/api/chat` | `{ messages: UIMessage[], document_ids?: string[] }` | Stream de AI SDK | Endpoint del agente |
+| `POST` | `/api/chat` | `{ messages: UIMessage[], document_ids?: string[], conversation_id?: string }` | Stream de AI SDK | Endpoint del agente |
 | `GET` | `/api/conversations` | — | `Conversation[]` | Histórico de conversaciones |
 | `GET` | `/api/conversations/[id]` | — | `{ conversation, messages }` | Carga una conversación |
+| `GET` | `/admin` | — | HTML | Panel de metricas protegido por `ADMIN_EMAILS` |
 
 ---
 
@@ -133,6 +134,9 @@ Ver `.env.example`. Resumen:
 - `OPENAI_CHAT_MODEL` — default `gpt-4o-mini`
 - `OPENAI_EMBEDDING_MODEL` — default `text-embedding-3-small`
 - `MAX_UPLOAD_BYTES` — default `26214400` (25 MB)
+- `ADMIN_EMAILS` — lista separada por comas para acceder a `/admin`
+- `DEMO_USER_EMAIL` — cuenta usada para preparar una demo manual
+- `E2E_USER_EMAIL` / `E2E_USER_PASSWORD` — credenciales opcionales para Playwright
 
 ---
 

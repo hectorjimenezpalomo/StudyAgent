@@ -4,6 +4,12 @@ import { z } from 'zod';
 import { AI_CONFIG } from '@/lib/ai/config';
 import { SYSTEM_PROMPT_AGENT } from '@/lib/ai/prompts';
 import { createAgentTools, type AgentToolContext } from '@/lib/ai/tools';
+import {
+  getOrCreateConversation,
+  persistChatMessage,
+  touchConversation,
+  type AppSupabaseClient,
+} from '@/lib/chat/persistence';
 import { createClient } from '@/lib/supabase/server';
 import type { Tables } from '@/lib/supabase/types';
 
@@ -22,6 +28,7 @@ const messageSchema = z
 const bodySchema = z.object({
   messages: z.array(messageSchema).min(1),
   document_ids: z.array(z.string().uuid()).optional(),
+  conversation_id: z.string().uuid().optional(),
 });
 
 const NO_READY_DOCUMENTS_MESSAGE =
@@ -31,8 +38,9 @@ function estimateTokens(text: string) {
   return Math.ceil(text.length / 4);
 }
 
-function createAssistantTextResponse(message: string) {
+function createAssistantTextResponse(message: string, conversationId?: string) {
   return createDataStreamResponse({
+    headers: conversationId ? { 'x-conversation-id': conversationId } : undefined,
     execute(dataStream) {
       dataStream.write(formatDataStreamPart('text', message));
     },
@@ -69,7 +77,7 @@ function getLastUserMessage(messages: z.infer<typeof messageSchema>[]) {
 }
 
 export async function POST(req: Request) {
-  const supabase = await createClient();
+  const supabase = (await createClient()) as AppSupabaseClient;
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -91,12 +99,38 @@ export async function POST(req: Request) {
     return Response.json({ error: 'Body invalido' }, { status: 400 });
   }
 
-  const { messages, document_ids: requestedDocumentIds } = parsed.data;
+  const {
+    messages,
+    document_ids: requestedDocumentIds,
+    conversation_id: requestedConversationId,
+  } = parsed.data;
   const lastUserMessage = getLastUserMessage(messages);
   const question = lastUserMessage ? extractMessageText(lastUserMessage) : '';
 
   if (!question) {
     return Response.json({ error: 'Falta mensaje de usuario' }, { status: 400 });
+  }
+
+  const conversation = await getOrCreateConversation(
+    supabase,
+    user.id,
+    requestedConversationId,
+    question
+  );
+
+  if (conversation.error || !conversation.conversationId) {
+    return Response.json({ error: conversation.error }, { status: 404 });
+  }
+
+  const conversationId = conversation.conversationId;
+  const userMessage = await persistChatMessage(supabase, {
+    conversationId,
+    role: 'user',
+    text: question,
+  });
+
+  if (!userMessage.ok) {
+    return Response.json({ error: userMessage.error }, { status: 500 });
   }
 
   let readyDocumentsQuery = supabase
@@ -129,7 +163,13 @@ export async function POST(req: Request) {
     console.log(
       `[ai/chat] user=${user.id} messages=${messages.length} chunks=0 model=none estimated_tokens=0`
     );
-    return createAssistantTextResponse(NO_READY_DOCUMENTS_MESSAGE);
+    await persistChatMessage(supabase, {
+      conversationId,
+      role: 'assistant',
+      text: NO_READY_DOCUMENTS_MESSAGE,
+    });
+    await touchConversation(supabase, conversationId);
+    return createAssistantTextResponse(NO_READY_DOCUMENTS_MESSAGE, conversationId);
   }
 
   const tools = createAgentTools({
@@ -156,9 +196,22 @@ export async function POST(req: Request) {
     tools,
     maxSteps: AI_CONFIG.agent.maxSteps,
     maxTokens: AI_CONFIG.agent.maxTokensPerResponse,
+    onFinish: async ({ text, toolCalls, toolResults }) => {
+      await persistChatMessage(supabase, {
+        conversationId,
+        role: 'assistant',
+        text,
+        toolCalls,
+        toolResults,
+      });
+      await touchConversation(supabase, conversationId);
+    },
   });
 
   return result.toDataStreamResponse({
+    headers: {
+      'x-conversation-id': conversationId,
+    },
     getErrorMessage(error) {
       console.error('[api/chat] stream', error);
       return 'Error al generar respuesta';
