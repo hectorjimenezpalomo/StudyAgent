@@ -1,54 +1,88 @@
-/**
- * POST /api/upload — recibe un PDF, lo guarda en Storage, crea la fila
- * en `documents` y dispara la ingesta.
- *
- * Codex: implementar siguiendo las reglas de seguridad de AGENTS.md:
- * - Validar mime-type y tamaño en server
- * - Path en storage: <user_id>/<doc_id>.pdf
- * - Disparar ingestDocument(doc.id) en background; no esperar a que termine
- *   (la UI hará polling de /api/documents/[id]/status).
- */
-
-import { createClient } from '@/lib/supabase/server';
-import { ingestDocument } from '@/lib/ai/ingest';
+import { z } from 'zod';
 import { AI_CONFIG } from '@/lib/ai/config';
+import { createClient } from '@/lib/supabase/server';
 
 export const maxDuration = 60;
 
+const uploadSchema = z.object({
+  file: z
+    .instanceof(File, { message: 'Falta archivo' })
+    .refine((file) => file.type === 'application/pdf', {
+      message: 'Solo se aceptan PDFs',
+    })
+    .refine((file) => file.size <= AI_CONFIG.limits.maxUploadBytes, {
+      message: `Tamano maximo ${AI_CONFIG.limits.maxUploadBytes} bytes`,
+    }),
+});
+
+const titleSchema = z.string().trim().min(1).max(255);
+
 export async function POST(req: Request) {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
   if (!user) {
     return Response.json({ error: 'No autenticado' }, { status: 401 });
   }
 
-  const formData = await req.formData();
-  const file = formData.get('file');
-
-  if (!(file instanceof File)) {
-    return Response.json({ error: 'Falta archivo' }, { status: 400 });
+  let formData: FormData;
+  try {
+    formData = await req.formData();
+  } catch (error) {
+    console.error('[api/upload] formData', error);
+    return Response.json({ error: 'Formulario invalido' }, { status: 400 });
   }
 
-  if (file.type !== 'application/pdf') {
-    return Response.json({ error: 'Solo se aceptan PDFs' }, { status: 400 });
+  const parsed = uploadSchema.safeParse({ file: formData.get('file') });
+  if (!parsed.success) {
+    const message = parsed.error.issues[0]?.message ?? 'Archivo invalido';
+    const status = message.startsWith('Tamano') ? 413 : 400;
+    return Response.json({ error: message }, { status });
   }
 
-  if (file.size > AI_CONFIG.limits.maxUploadBytes) {
-    return Response.json(
-      { error: `Tamaño máximo ${AI_CONFIG.limits.maxUploadBytes} bytes` },
-      { status: 413 }
-    );
+  const { file } = parsed.data;
+  const documentId = crypto.randomUUID();
+  const storagePath = `${user.id}/${documentId}.pdf`;
+  const titleResult = titleSchema.safeParse(file.name);
+  const title = titleResult.success ? titleResult.data : 'document.pdf';
+
+  const { error: insertError } = await supabase.from('documents').insert({
+    id: documentId,
+    user_id: user.id,
+    title,
+    storage_path: storagePath,
+    size_bytes: file.size,
+    status: 'pending',
+  });
+
+  if (insertError) {
+    console.error('[api/upload] insert', insertError);
+    return Response.json({ error: 'Error al crear documento' }, { status: 500 });
   }
 
-  // TODO Codex: completar:
-  //
-  // 1) Crear fila en documents con status='pending', size_bytes=file.size, title=file.name
-  // 2) storage_path = `${user.id}/${doc.id}.pdf`
-  // 3) Subir el archivo: supabase.storage.from('documents').upload(storage_path, file, { contentType: 'application/pdf' })
-  // 4) Si falla la subida, borrar la fila de documents y devolver error
-  // 5) UPDATE documents SET storage_path = ... WHERE id = doc.id
-  // 6) Disparar ingesta en background: void ingestDocument(doc.id).catch(err => console.error('[api/upload] ingest', err))
-  // 7) Devolver { document_id: doc.id }
+  const { error: uploadError } = await supabase.storage
+    .from('documents')
+    .upload(storagePath, file, {
+      contentType: 'application/pdf',
+      upsert: false,
+    });
 
-  return Response.json({ error: 'No implementado' }, { status: 501 });
+  if (uploadError) {
+    console.error('[api/upload] storage upload', uploadError);
+
+    const { error: cleanupError } = await supabase
+      .from('documents')
+      .delete()
+      .eq('id', documentId);
+
+    if (cleanupError) {
+      console.error('[api/upload] cleanup document', cleanupError);
+    }
+
+    return Response.json({ error: 'Error al subir PDF' }, { status: 500 });
+  }
+
+  return Response.json({ document_id: documentId });
 }
