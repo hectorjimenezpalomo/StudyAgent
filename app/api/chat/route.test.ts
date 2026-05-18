@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { streamText } from 'ai';
-import { embedQuery } from '@/lib/ai/embeddings';
-import { buildRagPrompt } from '@/lib/ai/prompts';
+import { createAgentTools } from '@/lib/ai/tools';
+import { SYSTEM_PROMPT_AGENT } from '@/lib/ai/prompts';
 import { createClient } from '@/lib/supabase/server';
+import { AI_CONFIG } from '@/lib/ai/config';
 import { POST, __chatTestUtils } from './route';
 
 vi.mock('@ai-sdk/openai', () => ({
@@ -29,12 +30,14 @@ vi.mock('ai', () => ({
   })),
 }));
 
-vi.mock('@/lib/ai/embeddings', () => ({
-  embedQuery: vi.fn(async () => [0.1, 0.2, 0.3]),
-}));
-
-vi.mock('@/lib/ai/prompts', () => ({
-  buildRagPrompt: vi.fn(() => 'rag prompt'),
+vi.mock('@/lib/ai/tools', () => ({
+  createAgentTools: vi.fn(() => ({
+    search_documents: { description: 'search_documents' },
+    generate_quiz: { description: 'generate_quiz' },
+    generate_summary: { description: 'generate_summary' },
+    generate_flashcards: { description: 'generate_flashcards' },
+    explain_concept: { description: 'explain_concept' },
+  })),
 }));
 
 vi.mock('@/lib/supabase/server', () => ({
@@ -46,16 +49,7 @@ const USER_ID = '22222222-2222-4222-8222-222222222222';
 type MockSupabaseOptions = {
   user?: { id: string } | null;
   readyDocuments?: Array<{ id: string }>;
-  chunks?: Array<{
-    id: string;
-    document_id: string;
-    content: string;
-    chunk_index: number;
-    page_number: number | null;
-    similarity: number;
-  }>;
   readyDocumentsError?: { message: string } | null;
-  chunksError?: { message: string } | null;
 };
 
 function createThenableQuery<T>(result: T) {
@@ -82,10 +76,6 @@ function mockSupabase(options: MockSupabaseOptions = {}) {
       select: vi.fn(() => ({
         eq: vi.fn(() => createThenableQuery(readyDocumentsResult)),
       })),
-    })),
-    rpc: vi.fn(async () => ({
-      data: options.chunks ?? [],
-      error: options.chunksError ?? null,
     })),
   };
 
@@ -135,42 +125,39 @@ describe('POST /api/chat', () => {
 
     expect(response.status).toBe(200);
     expect(await response.text()).toContain(__chatTestUtils.NO_READY_DOCUMENTS_MESSAGE);
-    expect(embedQuery).not.toHaveBeenCalled();
+    expect(createAgentTools).not.toHaveBeenCalled();
     expect(streamText).not.toHaveBeenCalled();
   });
 
-  it('hace RAG y devuelve stream del modelo si hay chunks', async () => {
-    const supabase = mockSupabase({
+  it('crea agente con tools, prompt del sistema y maxSteps', async () => {
+    mockSupabase({
       readyDocuments: [{ id: '33333333-3333-4333-8333-333333333333' }],
-      chunks: [
-        {
-          id: '44444444-4444-4444-8444-444444444444',
-          document_id: '33333333-3333-4333-8333-333333333333',
-          content: 'Contenido relevante',
-          chunk_index: 0,
-          page_number: null,
-          similarity: 0.8,
-        },
-      ],
     });
 
     const response = await POST(
-      chatRequest({ messages: [{ role: 'user', content: 'Explica esto' }] })
+      chatRequest({ messages: [{ role: 'user', content: 'Hazme un quiz' }] })
     );
 
     expect(response.status).toBe(200);
     expect(await response.text()).toBe('model-stream');
-    expect(embedQuery).toHaveBeenCalledWith('Explica esto');
-    expect(supabase.rpc).toHaveBeenCalledWith('match_chunks', {
-      query_embedding: '[0.1,0.2,0.3]',
-      match_threshold: 0.5,
-      match_count: 8,
-      p_user_id: USER_ID,
-      p_document_ids: ['33333333-3333-4333-8333-333333333333'],
-    });
-    expect(buildRagPrompt).toHaveBeenCalledWith('Explica esto', [
-      expect.objectContaining({ content: 'Contenido relevante' }),
-    ]);
-    expect(streamText).toHaveBeenCalled();
+    expect(createAgentTools).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: USER_ID,
+        allowedDocumentIds: ['33333333-3333-4333-8333-333333333333'],
+      })
+    );
+    expect(streamText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        system: SYSTEM_PROMPT_AGENT,
+        tools: expect.objectContaining({
+          search_documents: expect.any(Object),
+          generate_quiz: expect.any(Object),
+          generate_summary: expect.any(Object),
+          generate_flashcards: expect.any(Object),
+          explain_concept: expect.any(Object),
+        }),
+        maxSteps: AI_CONFIG.agent.maxSteps,
+      })
+    );
   });
 });

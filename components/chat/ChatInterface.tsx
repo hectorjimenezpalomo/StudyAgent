@@ -2,21 +2,69 @@
 
 import { useEffect, useRef } from 'react';
 import { useChat } from '@ai-sdk/react';
+import { ToolCallDisplay } from './ToolCallDisplay';
 
-function MessageBubble({ role, content }: { role: string; content: string }) {
+type ToolInvocationLike = {
+  toolCallId?: string;
+  toolName: string;
+  args?: unknown;
+  result?: unknown;
+  state: 'partial-call' | 'call' | 'result';
+};
+
+function getToolInvocations(message: unknown) {
+  if (
+    message &&
+    typeof message === 'object' &&
+    'toolInvocations' in message &&
+    Array.isArray(message.toolInvocations)
+  ) {
+    return message.toolInvocations as ToolInvocationLike[];
+  }
+
+  return [];
+}
+
+function MessageBubble({
+  role,
+  content,
+  toolInvocations,
+}: {
+  role: string;
+  content: string;
+  toolInvocations: ToolInvocationLike[];
+}) {
   const isUser = role === 'user';
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div
-        className={[
-          'max-w-[78%] whitespace-pre-wrap rounded-lg px-4 py-3 text-sm leading-6',
-          isUser
-            ? 'bg-slate-950 text-white'
-            : 'border border-slate-200 bg-white text-slate-800',
-        ].join(' ')}
-      >
-        {content}
+      <div className="max-w-[78%]">
+        {content ? (
+          <div
+            className={[
+              'whitespace-pre-wrap rounded-lg px-4 py-3 text-sm leading-6',
+              isUser
+                ? 'bg-slate-950 text-white'
+                : 'border border-slate-200 bg-white text-slate-800',
+            ].join(' ')}
+          >
+            {content}
+          </div>
+        ) : null}
+
+        {!isUser && toolInvocations.length > 0 ? (
+          <div className="space-y-2">
+            {toolInvocations.map((toolInvocation, index) => (
+              <ToolCallDisplay
+                key={toolInvocation.toolCallId ?? `${toolInvocation.toolName}-${index}`}
+                toolName={toolInvocation.toolName}
+                args={toolInvocation.args}
+                result={toolInvocation.result}
+                state={toolInvocation.state}
+              />
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -34,6 +82,7 @@ export function ChatInterface() {
     stop,
   } = useChat({
     api: '/api/chat',
+    maxSteps: 5,
   });
 
   const isBusy = status === 'submitted' || status === 'streaming';
@@ -66,6 +115,7 @@ export function ChatInterface() {
                 key={message.id}
                 role={message.role}
                 content={message.content}
+                toolInvocations={getToolInvocations(message)}
               />
             ))}
             {status === 'submitted' ? (

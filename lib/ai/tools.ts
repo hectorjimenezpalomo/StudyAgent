@@ -1,115 +1,333 @@
-/**
- * Herramientas del agente. Cada herramienta sigue el formato del Vercel AI SDK.
- *
- * Codex: implementa cada `execute`. Los schemas zod ya están listos; NO los cambies
- * sin justificación. El system prompt en lib/ai/prompts.ts ya hace referencia
- * a estos nombres exactos.
- */
-
-import { tool } from 'ai';
+import { openai } from '@ai-sdk/openai';
+import { generateObject, generateText, tool } from 'ai';
 import { z } from 'zod';
+import {
+  buildExplainPrompt,
+  buildFlashcardsPrompt,
+  buildQuizPrompt,
+  buildSummaryPrompt,
+} from './prompts';
 import { AI_CONFIG } from './config';
+import { embedQuery } from './embeddings';
+import type { ChunkResult, Flashcard, QuizQuestion } from '@/types';
+import type { Tables } from '@/lib/supabase/types';
+
+type ChunkRow = Pick<Tables<'chunks'>, 'content' | 'chunk_index' | 'page_number'>;
+type DbError = { message: string };
+type QueryResult<T> = { data: T | null; error: DbError | null };
+
+export type AgentToolContext = {
+  userId: string;
+  allowedDocumentIds: string[];
+  supabase: {
+    rpc(name: 'match_chunks', args: MatchChunksArgs): Promise<QueryResult<ChunkResult[]>>;
+    from(table: 'chunks'): {
+      select(columns: string): {
+        eq(column: string, value: string): {
+          order(
+            column: string,
+            options: { ascending: boolean }
+          ): Promise<QueryResult<ChunkRow[]>>;
+        };
+      };
+    };
+  };
+};
+
+type MatchChunksArgs = {
+  query_embedding: string;
+  match_threshold: number;
+  match_count: number;
+  p_user_id: string;
+  p_document_ids: string[];
+};
+
+const quizQuestionSchema: z.ZodType<QuizQuestion> = z.object({
+  question: z.string().min(1),
+  options: z.tuple([
+    z.string().min(1),
+    z.string().min(1),
+    z.string().min(1),
+    z.string().min(1),
+  ]),
+  correct_index: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]),
+  explanation: z.string().min(1),
+});
+
+const flashcardSchema: z.ZodType<Flashcard> = z.object({
+  question: z.string().min(1),
+  answer: z.string().min(1),
+});
+
+const searchDocumentsSchema = z.object({
+  query: z.string().min(1).describe('La pregunta o tema a buscar, en lenguaje natural.'),
+  document_ids: z
+    .array(z.string().uuid())
+    .optional()
+    .describe('Opcional: limita la busqueda a documentos concretos.'),
+  top_k: z
+    .number()
+    .int()
+    .min(1)
+    .max(20)
+    .optional()
+    .describe('Cuantos resultados devolver. Default: 8.'),
+});
+
+const generateQuizSchema = z.object({
+  topic: z.string().min(1).describe('Tema sobre el que generar preguntas.'),
+  num_questions: z
+    .number()
+    .int()
+    .min(1)
+    .max(AI_CONFIG.limits.maxQuizQuestions)
+    .describe(`Numero de preguntas (1-${AI_CONFIG.limits.maxQuizQuestions}).`),
+  document_ids: z.array(z.string().uuid()).optional(),
+});
+
+const generateSummarySchema = z.object({
+  document_id: z.string().uuid(),
+  length: z.enum(['short', 'medium', 'long']).default('medium'),
+});
+
+const generateFlashcardsSchema = z.object({
+  topic: z.string().min(1),
+  num_cards: z.number().int().min(1).max(AI_CONFIG.limits.maxFlashcards),
+  document_ids: z.array(z.string().uuid()).optional(),
+});
+
+const explainConceptSchema = z.object({
+  concept: z.string().min(1),
+  level: z.enum(['beginner', 'intermediate', 'advanced']).default('intermediate'),
+  document_ids: z.array(z.string().uuid()).optional(),
+});
+
+function serializeEmbedding(embedding: number[]) {
+  return `[${embedding.join(',')}]`;
+}
+
+function filterDocumentIds(
+  requestedDocumentIds: string[] | undefined,
+  allowedDocumentIds: string[]
+) {
+  if (!requestedDocumentIds || requestedDocumentIds.length === 0) {
+    return allowedDocumentIds;
+  }
+
+  const allowed = new Set(allowedDocumentIds);
+  return requestedDocumentIds.filter((documentId) => allowed.has(documentId));
+}
+
+function chunksToContext(chunks: ChunkResult[]) {
+  return chunks
+    .map(
+      (chunk, index) =>
+        `[Fuente ${index + 1}${chunk.page_number ? `, pagina ${chunk.page_number}` : ''}]\n${chunk.content}`
+    )
+    .join('\n\n---\n\n');
+}
+
+async function searchDocuments(
+  context: AgentToolContext,
+  params: z.infer<typeof searchDocumentsSchema>
+) {
+  const documentIds = filterDocumentIds(params.document_ids, context.allowedDocumentIds);
+
+  if (documentIds.length === 0) {
+    return {
+      chunks: [] as ChunkResult[],
+      message: 'No hay documentos listos dentro del filtro solicitado.',
+    };
+  }
+
+  const embedding = await embedQuery(params.query);
+  const { data, error } = await context.supabase.rpc('match_chunks', {
+    query_embedding: serializeEmbedding(embedding),
+    match_threshold: AI_CONFIG.rag.matchThreshold,
+    match_count: params.top_k ?? AI_CONFIG.rag.matchCount,
+    p_user_id: context.userId,
+    p_document_ids: documentIds,
+  });
+
+  if (error) {
+    console.error('[ai/tools] search_documents', error);
+    return {
+      chunks: [] as ChunkResult[],
+      message: 'No se pudo buscar en los documentos.',
+    };
+  }
+
+  return {
+    chunks: data ?? [],
+  };
+}
+
+async function loadDocumentText(context: AgentToolContext, documentId: string) {
+  if (!context.allowedDocumentIds.includes(documentId)) {
+    return {
+      text: '',
+      error: 'Documento no disponible o aun no esta listo.',
+    };
+  }
+
+  const { data, error } = await context.supabase
+    .from('chunks')
+    .select('content, chunk_index, page_number')
+    .eq('document_id', documentId)
+    .order('chunk_index', { ascending: true });
+
+  if (error) {
+    console.error('[ai/tools] load document chunks', error);
+    return {
+      text: '',
+      error: 'No se pudo cargar el documento.',
+    };
+  }
+
+  const chunks = data ?? [];
+  return {
+    text: chunks.map((chunk) => chunk.content).join('\n\n'),
+    error: chunks.length === 0 ? 'El documento no tiene chunks listos.' : null,
+  };
+}
 
 /**
- * Busca chunks relevantes en los documentos del usuario.
- * Implementación: embedea la query, llama a la RPC match_chunks en Supabase,
- * devuelve los chunks ordenados por similitud descendente.
+ * Crea herramientas del agente limitadas al usuario y documentos permitidos.
  */
-export const searchDocumentsTool = tool({
-  description:
-    'Busca pasajes relevantes en los documentos personales del usuario. Úsala antes de responder a cualquier pregunta sobre el contenido de sus apuntes.',
-  parameters: z.object({
-    query: z.string().min(1).describe('La pregunta o tema a buscar, en lenguaje natural.'),
-    document_ids: z
-      .array(z.string().uuid())
-      .optional()
-      .describe('Opcional: limita la búsqueda a documentos concretos. Si se omite, busca en todos los del usuario.'),
-    top_k: z
-      .number()
-      .int()
-      .min(1)
-      .max(20)
-      .optional()
-      .describe('Cuántos resultados devolver. Default: 8.'),
-  }),
-  execute: async ({ query, document_ids, top_k }) => {
-    // TODO Codex: implementar siguiendo lib/ai/embeddings.ts y la RPC match_chunks.
-    // Devolver { chunks: Array<{ id, document_id, content, page_number, similarity }> }
-    // Pasar siempre el user_id del contexto autenticado a la RPC.
-    throw new Error('searchDocumentsTool no implementada todavía');
-  },
-});
+export function createAgentTools(context: AgentToolContext) {
+  /**
+   * Usa esta herramienta para recuperar pasajes concretos de los PDFs listos antes de responder
+   * preguntas sobre el material del usuario.
+   */
+  const searchDocumentsTool = tool({
+    description:
+      'Busca pasajes relevantes en los documentos personales del usuario. Usala antes de responder a cualquier pregunta sobre el contenido de sus apuntes.',
+    parameters: searchDocumentsSchema,
+    execute: async (params) => searchDocuments(context, params),
+  });
 
-export const generateQuizTool = tool({
-  description:
-    'Genera preguntas tipo test sobre un tema, usando los documentos del usuario como fuente. Úsala cuando pidan practicar o autoevaluarse.',
-  parameters: z.object({
-    topic: z.string().min(1).describe('Tema sobre el que generar preguntas.'),
-    num_questions: z
-      .number()
-      .int()
-      .min(1)
-      .max(AI_CONFIG.limits.maxQuizQuestions)
-      .describe(`Número de preguntas (1-${AI_CONFIG.limits.maxQuizQuestions}).`),
-    document_ids: z.array(z.string().uuid()).optional(),
-  }),
-  execute: async ({ topic, num_questions, document_ids }) => {
-    // TODO Codex: 1) RAG con searchDocuments para topic; 2) llamar LLM con buildQuizPrompt;
-    // 3) parsear JSON; 4) devolver { questions: QuizQuestion[] }
-    throw new Error('generateQuizTool no implementada todavía');
-  },
-});
+  /**
+   * Usa esta herramienta cuando el usuario pida practicar con preguntas tipo test sobre sus documentos.
+   */
+  const generateQuizTool = tool({
+    description:
+      'Genera preguntas tipo test sobre un tema, usando los documentos del usuario como fuente. Usala cuando pidan practicar o autoevaluarse.',
+    parameters: generateQuizSchema,
+    execute: async ({ topic, num_questions, document_ids }) => {
+      const { chunks, message } = await searchDocuments(context, {
+        query: topic,
+        document_ids,
+        top_k: AI_CONFIG.rag.matchCount,
+      });
 
-export const generateSummaryTool = tool({
-  description:
-    'Resume un documento completo. Úsala cuando pidan "resúmeme el documento X".',
-  parameters: z.object({
-    document_id: z.string().uuid(),
-    length: z.enum(['short', 'medium', 'long']).default('medium'),
-  }),
-  execute: async ({ document_id, length }) => {
-    // TODO Codex: 1) traer TODOS los chunks del documento ordenados por chunk_index;
-    // 2) concatenar contenido; 3) llamar LLM con buildSummaryPrompt;
-    // 4) devolver { summary: string }
-    throw new Error('generateSummaryTool no implementada todavía');
-  },
-});
+      if (chunks.length === 0) {
+        return { questions: [] as QuizQuestion[], message: message ?? 'Sin contexto suficiente.' };
+      }
 
-export const generateFlashcardsTool = tool({
-  description:
-    'Genera flashcards (pregunta/respuesta cortas) sobre un tema para repaso espaciado.',
-  parameters: z.object({
-    topic: z.string().min(1),
-    num_cards: z.number().int().min(1).max(AI_CONFIG.limits.maxFlashcards),
-    document_ids: z.array(z.string().uuid()).optional(),
-  }),
-  execute: async ({ topic, num_cards, document_ids }) => {
-    // TODO Codex: idéntico patrón a generateQuiz pero con buildFlashcardsPrompt.
-    throw new Error('generateFlashcardsTool no implementada todavía');
-  },
-});
+      const { object } = await generateObject({
+        model: openai(AI_CONFIG.chatModel),
+        schema: z.object({
+          questions: z.array(quizQuestionSchema).max(num_questions),
+        }),
+        prompt: buildQuizPrompt(topic, num_questions, chunksToContext(chunks)),
+      });
 
-export const explainConceptTool = tool({
-  description:
-    'Explica un concepto adaptando la profundidad al nivel pedido. Úsala cuando el usuario pida una explicación detallada.',
-  parameters: z.object({
-    concept: z.string().min(1),
-    level: z.enum(['beginner', 'intermediate', 'advanced']).default('intermediate'),
-    document_ids: z.array(z.string().uuid()).optional(),
-  }),
-  execute: async ({ concept, level, document_ids }) => {
-    // TODO Codex: RAG + buildExplainPrompt + LLM call. Devolver { explanation: string }.
-    throw new Error('explainConceptTool no implementada todavía');
-  },
-});
+      return object;
+    },
+  });
 
-/**
- * El conjunto completo que se pasa a streamText en /api/chat.
- */
-export const agentTools = {
-  search_documents: searchDocumentsTool,
-  generate_quiz: generateQuizTool,
-  generate_summary: generateSummaryTool,
-  generate_flashcards: generateFlashcardsTool,
-  explain_concept: explainConceptTool,
+  /**
+   * Usa esta herramienta cuando el usuario pida un resumen de un documento listo concreto.
+   */
+  const generateSummaryTool = tool({
+    description: 'Resume un documento completo.',
+    parameters: generateSummarySchema,
+    execute: async ({ document_id, length }) => {
+      const { text, error } = await loadDocumentText(context, document_id);
+      if (error) {
+        return { summary: '', message: error };
+      }
+
+      const { text: summary } = await generateText({
+        model: openai(AI_CONFIG.chatModel),
+        prompt: buildSummaryPrompt(text, length),
+        maxTokens: AI_CONFIG.agent.maxTokensPerResponse,
+      });
+
+      return { summary };
+    },
+  });
+
+  /**
+   * Usa esta herramienta cuando el usuario pida tarjetas de repaso o flashcards sobre un tema.
+   */
+  const generateFlashcardsTool = tool({
+    description:
+      'Genera flashcards pregunta/respuesta cortas sobre un tema para repaso espaciado.',
+    parameters: generateFlashcardsSchema,
+    execute: async ({ topic, num_cards, document_ids }) => {
+      const { chunks, message } = await searchDocuments(context, {
+        query: topic,
+        document_ids,
+        top_k: AI_CONFIG.rag.matchCount,
+      });
+
+      if (chunks.length === 0) {
+        return { cards: [] as Flashcard[], message: message ?? 'Sin contexto suficiente.' };
+      }
+
+      const { object } = await generateObject({
+        model: openai(AI_CONFIG.chatModel),
+        schema: z.object({
+          cards: z.array(flashcardSchema).max(num_cards),
+        }),
+        prompt: buildFlashcardsPrompt(topic, num_cards, chunksToContext(chunks)),
+      });
+
+      return object;
+    },
+  });
+
+  /**
+   * Usa esta herramienta cuando el usuario pida una explicacion adaptada a un nivel de detalle.
+   */
+  const explainConceptTool = tool({
+    description:
+      'Explica un concepto adaptando la profundidad al nivel pedido, usando los documentos como fuente principal.',
+    parameters: explainConceptSchema,
+    execute: async ({ concept, level, document_ids }) => {
+      const { chunks, message } = await searchDocuments(context, {
+        query: concept,
+        document_ids,
+        top_k: AI_CONFIG.rag.matchCount,
+      });
+
+      if (chunks.length === 0) {
+        return { explanation: '', message: message ?? 'Sin contexto suficiente.' };
+      }
+
+      const { text } = await generateText({
+        model: openai(AI_CONFIG.chatModel),
+        prompt: buildExplainPrompt(concept, level, chunksToContext(chunks)),
+        maxTokens: AI_CONFIG.agent.maxTokensPerResponse,
+      });
+
+      return { explanation: text };
+    },
+  });
+
+  return {
+    search_documents: searchDocumentsTool,
+    generate_quiz: generateQuizTool,
+    generate_summary: generateSummaryTool,
+    generate_flashcards: generateFlashcardsTool,
+    explain_concept: explainConceptTool,
+  };
+}
+
+export const __toolsTestUtils = {
+  chunksToContext,
+  filterDocumentIds,
+  searchDocuments,
+  serializeEmbedding,
 };
