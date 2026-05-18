@@ -1,0 +1,19 @@
+node_modules
+.next
+out
+.env
+.env.local
+.env*.local
+*.log
+.DS_Store
+.vscode
+.idea
+coverage
+playwright-report
+test-results
+.turbo
+.vercel
+
+# AI agent local guides
+AGENTS.md
+CODEX.md
