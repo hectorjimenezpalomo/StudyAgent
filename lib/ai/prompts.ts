@@ -105,6 +105,34 @@ ${documentText}`;
 }
 
 /**
+ * Prompt del reranker LLM. Listwise: pide una puntuación 0-10 por documento.
+ * El llamante debe shufflear los documentos antes para mitigar position bias.
+ */
+export function buildRerankPrompt(query: string, documents: string[]): string {
+  const docList = documents
+    .map((doc, i) => `Documento ${i + 1}:\n${doc}`)
+    .join('\n\n---\n\n');
+
+  return `Tu tarea es puntuar la relevancia de cada documento respecto a una consulta. Devuelve un score entre 0 y 10 para CADA documento:
+
+- 10: contiene exactamente la respuesta a la consulta.
+- 7-9: muy relevante, contiene parte sustancial de la respuesta.
+- 4-6: relacionado con el tema pero no responde directamente.
+- 1-3: tangencial.
+- 0: irrelevante.
+
+Sé estricto: si un documento solo menciona la palabra clave pero no aborda la consulta, puntúa bajo.
+
+CONSULTA:
+${query}
+
+DOCUMENTOS:
+${docList}
+
+Devuelve un score para CADA uno de los ${documents.length} documentos, identificándolo por su número (1-${documents.length}).`;
+}
+
+/**
  * Prompt para explain_concept con ajuste de nivel.
  */
 export function buildExplainPrompt(

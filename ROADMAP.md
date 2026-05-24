@@ -25,10 +25,14 @@ Objetivo: pasar de "RAG básico que funciona" a "RAG medible e iterable".
 - Comparador `evals/compare.ts` (`npm run eval:compare`) que reporta delta agregado y casos que mejoran o regresan.
 - Pendiente: aplicar la migración remota, correr eval en ambos modos y registrar el delta en el README.
 
-### A3. Reranking con cross-encoder
-- Etapa intermedia retrieve(top-20) → rerank → top-5.
-- Detrás de feature flag para correr A/B contra evals.
-- Decisión de proveedor pendiente (Cohere Rerank vs HF Inference vs modelo local). Requiere PR de propuesta antes de añadir dependencia.
+### A3. Reranking con cross-encoder — hecho
+- Capa `lib/ai/rerank.ts` con interfaz `Reranker` y dos implementaciones sin SDK nuevo:
+  - `llm`: gpt-4o-mini puntúa listwise via `generateObject` (shuffle previo para mitigar position bias).
+  - `cohere`: Cohere Rerank v3 multilingual via `fetch` (cross-encoder real, requiere `COHERE_API_KEY`).
+- Integrado en `lib/ai/retrieval.ts`: over-fetch `topK * rerankCandidatePoolMultiplier` candidatos y reordena. Fallback graceful al orden original si el reranker lanza.
+- Flag `RERANK_PROVIDER` (default `none`). Tests con reranker inyectable (incluido `null` para forzar desactivar).
+- `RunReport` y `eval:compare` incluyen `rerank_provider` para diff de tres ejes (modo × reranker).
+- Pendiente: correr eval en remoto en `vector/none`, `hybrid/none`, `hybrid/llm`, `hybrid/cohere` y publicar la matriz en el README.
 
 ### A4. Query rewriting / HyDE
 - Reescritura de la query con LLM mini o generación de un "documento hipotético" para embebedar.

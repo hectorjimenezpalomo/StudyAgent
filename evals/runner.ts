@@ -191,6 +191,7 @@ function printSummary(report: RunReport): void {
   console.log(`Chat model:       ${report.config.chat_model}`);
   console.log(`Embedding model:  ${report.config.embedding_model} (${report.config.embedding_dimensions}d)`);
   console.log(`Retrieval mode:   ${report.config.retrieval_mode}`);
+  console.log(`Rerank provider:  ${report.config.rerank_provider}`);
   console.log(`Cases:            ${report.aggregate.n_cases}`);
   console.log('');
   console.log('--- Retrieval ---');
@@ -270,13 +271,14 @@ async function main(): Promise<void> {
       match_count: AI_CONFIG.rag.matchCount,
       match_threshold: AI_CONFIG.rag.matchThreshold,
       retrieval_mode: AI_CONFIG.rag.retrievalMode,
+      rerank_provider: AI_CONFIG.rag.rerankProvider,
     },
     cases: results,
     aggregate: aggregate(results),
   };
 
   await mkdir(RESULTS_DIR, { recursive: true });
-  const fileName = `${report.timestamp.replace(/[:.]/g, '-')}_${report.config.retrieval_mode}.json`;
+  const fileName = `${report.timestamp.replace(/[:.]/g, '-')}_${report.config.retrieval_mode}_${report.config.rerank_provider}.json`;
   const outputPath = path.join(RESULTS_DIR, fileName);
   await writeFile(outputPath, JSON.stringify(report, null, 2), 'utf8');
 

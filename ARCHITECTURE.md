@@ -55,6 +55,10 @@ Server (secretas):
 - `MAX_UPLOAD_BYTES` (default `26214400`)
 - `ADMIN_EMAILS` (lista separada por comas)
 - `RAG_RETRIEVAL_MODE` (default `vector`, valores: `vector` | `hybrid`). Si se pone `hybrid`, la migración 004 tiene que estar aplicada
+- `RERANK_PROVIDER` (default `none`, valores: `none` | `llm` | `cohere`). Activa la etapa de reranking post-retrieval
+- `RERANK_LLM_MODEL` (opcional, default `gpt-4o-mini`). Modelo usado por el reranker `llm`
+- `COHERE_API_KEY` (requerido si `RERANK_PROVIDER=cohere`)
+- `COHERE_RERANK_MODEL` (opcional, default `rerank-multilingual-v3.0`)
 
 Cliente (públicas):
 - `NEXT_PUBLIC_SUPABASE_URL`
@@ -69,7 +73,7 @@ Bucket `documents`, privado, límite 25 MB, mime permitido `application/pdf`. Pa
 
 `lib/ai/config.ts` (AI_CONFIG):
 - `chatModel`, `embeddingModel`, `embeddingDimensions: 1536`
-- `rag`: `chunkSizeTokens=700`, `chunkOverlapTokens=100`, `matchThreshold=0.5`, `matchCount=8`, `retrievalMode` ('vector' por defecto, override via `RAG_RETRIEVAL_MODE`), `hybridRRFConstant=60`, `hybridCandidateMultiplier=4`
+- `rag`: `chunkSizeTokens=700`, `chunkOverlapTokens=100`, `matchThreshold=0.5`, `matchCount=8`, `retrievalMode` ('vector' por defecto, override via `RAG_RETRIEVAL_MODE`), `hybridRRFConstant=60`, `hybridCandidateMultiplier=4`, `rerankProvider` ('none' por defecto, override via `RERANK_PROVIDER`), `rerankCandidatePoolMultiplier=3`, `rerankLlmModel` (override via `RERANK_LLM_MODEL`)
 - `agent`: `maxSteps=5`, `maxTokensPerResponse=2000`
 - `limits`: `maxUploadBytes`, `maxQuizQuestions=20`, `maxFlashcards=30`
 
@@ -85,8 +89,8 @@ Harness offline en `evals/`. Mide el pipeline RAG core (`embed → match_chunks 
 | `evals/judge.ts` | LLM-as-judge: `judgeFaithfulness`, `judgeAnswerRelevancy` |
 | `evals/pipeline.ts` | `runPipeline(supabase, userId, question, documentIds)` |
 | `evals/runner.ts` | CLI entry, ejecutable con `npm run eval` |
-| `evals/compare.ts` | Compara dos `RunReport` (típicamente `vector` vs `hybrid`), ejecutable con `npm run eval:compare` |
-| `evals/results/` | `<timestamp>_<mode>.json` por run, gitignored |
+| `evals/compare.ts` | Compara dos `RunReport` con configs distintas (modo o reranker), ejecutable con `npm run eval:compare` |
+| `evals/results/` | `<timestamp>_<mode>_<rerank>.json` por run, gitignored |
 
 Detalles operativos en `evals/README.md`.
 
@@ -103,7 +107,7 @@ components/
   auth/          LoginForm
 lib/
   supabase/      client.ts, server.ts, admin.ts, types.ts (generado)
-  ai/            chunker, embeddings, ingest, tools, retrieval, prompts, config
+  ai/            chunker, embeddings, ingest, tools, retrieval, rerank, prompts, config
   chat/          persistence (conversations + messages)
 evals/           harness offline (npm run eval)
 supabase/migrations/   001 schema, 002 match_chunks, 003 storage

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { embedQuery } from '../embeddings';
 import { retrieve, type RetrievalSupabase } from '../retrieval';
+import type { Reranker } from '../rerank';
 import { AI_CONFIG } from '../config';
 
 vi.mock('../embeddings', () => ({
@@ -166,5 +167,98 @@ describe('retrieve()', () => {
 
     const [calledName] = rpc.mock.calls[0];
     expect(calledName).toBe(AI_CONFIG.rag.retrievalMode === 'hybrid' ? 'match_chunks_hybrid' : 'match_chunks');
+  });
+
+  it('reranker=null fuerza desactivar y mantiene match_count = topK', async () => {
+    const { supabase, rpc } = createSupabaseMock();
+
+    await retrieve(supabase, {
+      query: 'q',
+      userId: USER_ID,
+      documentIds: [DOC_ID],
+      topK: 3,
+      mode: 'vector',
+      reranker: null,
+    });
+
+    expect(rpc).toHaveBeenCalledWith(
+      'match_chunks',
+      expect.objectContaining({ match_count: 3 })
+    );
+  });
+
+  it('con reranker inyectado: over-fetch a topK*multiplier y reordena por su salida', async () => {
+    const { supabase, rpc } = createSupabaseMock({
+      rpcResponse: {
+        data: [
+          { id: 'a', document_id: DOC_ID, content: 'a', chunk_index: 0, page_number: null, similarity: 0.9 },
+          { id: 'b', document_id: DOC_ID, content: 'b', chunk_index: 1, page_number: null, similarity: 0.8 },
+          { id: 'c', document_id: DOC_ID, content: 'c', chunk_index: 2, page_number: null, similarity: 0.7 },
+        ],
+        error: null,
+      },
+    });
+
+    const rerankFn = vi.fn(async () => [
+      { id: 'b', rerank_score: 9 },
+      { id: 'a', rerank_score: 5 },
+    ]);
+    const reranker: Reranker = { rerank: rerankFn };
+
+    const result = await retrieve(supabase, {
+      query: 'q',
+      userId: USER_ID,
+      documentIds: [DOC_ID],
+      topK: 2,
+      mode: 'vector',
+      reranker,
+    });
+
+    expect(rpc).toHaveBeenCalledWith(
+      'match_chunks',
+      expect.objectContaining({
+        match_count: 2 * AI_CONFIG.rag.rerankCandidatePoolMultiplier,
+      })
+    );
+    expect(rerankFn).toHaveBeenCalledWith({
+      query: 'q',
+      documents: [
+        { id: 'a', content: 'a' },
+        { id: 'b', content: 'b' },
+        { id: 'c', content: 'c' },
+      ],
+      topK: 2,
+    });
+    expect(result.map((c) => c.id)).toEqual(['b', 'a']);
+  });
+
+  it('si el reranker lanza, fallback al orden de retrieval truncado a topK', async () => {
+    const { supabase } = createSupabaseMock({
+      rpcResponse: {
+        data: [
+          { id: 'a', document_id: DOC_ID, content: 'a', chunk_index: 0, page_number: null, similarity: 0.9 },
+          { id: 'b', document_id: DOC_ID, content: 'b', chunk_index: 1, page_number: null, similarity: 0.8 },
+          { id: 'c', document_id: DOC_ID, content: 'c', chunk_index: 2, page_number: null, similarity: 0.7 },
+        ],
+        error: null,
+      },
+    });
+
+    const reranker: Reranker = {
+      rerank: vi.fn(async () => {
+        throw new Error('rerank down');
+      }),
+    };
+
+    const result = await retrieve(supabase, {
+      query: 'q',
+      userId: USER_ID,
+      documentIds: [DOC_ID],
+      topK: 2,
+      mode: 'vector',
+      reranker,
+    });
+
+    expect(result.map((c) => c.id)).toEqual(['a', 'b']);
   });
 });

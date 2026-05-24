@@ -8,6 +8,11 @@ function parseRetrievalMode(value: string | undefined): 'vector' | 'hybrid' {
   return 'vector';
 }
 
+function parseRerankProvider(value: string | undefined): RerankProvider {
+  if (value === 'llm' || value === 'cohere' || value === 'none') return value;
+  return 'none';
+}
+
 export const AI_CONFIG = {
   chatModel: process.env.OPENAI_CHAT_MODEL ?? 'gpt-4o-mini',
   embeddingModel: process.env.OPENAI_EMBEDDING_MODEL ?? 'text-embedding-3-small',
@@ -29,6 +34,15 @@ export const AI_CONFIG = {
     // Cuántos candidatos por ranker antes de fusionar. 4x significa que con
     // matchCount=8 cada lado aporta 32 candidatos al pool fusionado.
     hybridCandidateMultiplier: 4,
+    // Reranking post-retrieval. 'none' = sin reranker (default). 'llm' =
+    // gpt-4o-mini puntúa listwise. 'cohere' = Cohere Rerank v3 multilingual
+    // (requiere COHERE_API_KEY).
+    rerankProvider: parseRerankProvider(process.env.RERANK_PROVIDER),
+    // Cuántos candidatos pedir al retrieval antes de rerankear. Con topK=8 y
+    // multiplier=3 → fetch 24 → rerank → top 8.
+    rerankCandidatePoolMultiplier: 3,
+    // Modelo usado por el reranker LLM. Default = chatModel (gpt-4o-mini).
+    rerankLlmModel: process.env.RERANK_LLM_MODEL ?? 'gpt-4o-mini',
   },
 
   agent: {
@@ -44,3 +58,4 @@ export const AI_CONFIG = {
 } as const;
 
 export type RetrievalMode = 'vector' | 'hybrid';
+export type RerankProvider = 'none' | 'llm' | 'cohere';

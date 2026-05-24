@@ -23,6 +23,10 @@ import type { CaseResult, RunReport } from './types';
 const EVALS_DIR = path.resolve(import.meta.dirname);
 const RESULTS_DIR = path.join(EVALS_DIR, 'results');
 
+function configKey(report: RunReport): string {
+  return `${report.config.retrieval_mode}/${report.config.rerank_provider}`;
+}
+
 async function autoDetectReports(): Promise<{ baselinePath: string; candidatePath: string }> {
   let entries: string[];
   try {
@@ -36,19 +40,30 @@ async function autoDetectReports(): Promise<{ baselinePath: string; candidatePat
     .sort()
     .reverse();
 
-  const latestVector = sorted.find((n) => n.endsWith('_vector.json'));
-  const latestHybrid = sorted.find((n) => n.endsWith('_hybrid.json'));
-
-  if (!latestVector || !latestHybrid) {
+  if (sorted.length < 2) {
     throw new Error(
-      '[evals/compare] Auto-detección requiere al menos un run *_vector.json y uno *_hybrid.json en evals/results/.'
+      '[evals/compare] Auto-detección necesita al menos 2 runs en evals/results/. Pasa rutas explícitas si no.'
     );
   }
 
-  return {
-    baselinePath: path.join(RESULTS_DIR, latestVector),
-    candidatePath: path.join(RESULTS_DIR, latestHybrid),
-  };
+  // Buscamos los dos runs más recientes con configs distintas. Si los dos más
+  // recientes tienen la misma config (mismo modo + mismo reranker), no hay
+  // comparación útil y pedimos rutas explícitas.
+  const [latestPath, ...rest] = sorted.map((name) => path.join(RESULTS_DIR, name));
+  const latest = await loadReport(latestPath);
+  const latestKey = configKey(latest);
+
+  for (const candidatePath of rest) {
+    const candidate = await loadReport(candidatePath);
+    if (configKey(candidate) !== latestKey) {
+      // Por convención: baseline = el más antiguo (segundo), candidate = el más reciente.
+      return { baselinePath: candidatePath, candidatePath: latestPath };
+    }
+  }
+
+  throw new Error(
+    `[evals/compare] Todos los runs encontrados son ${latestKey}. Pasa dos rutas explícitas con configs distintas.`
+  );
 }
 
 async function loadReport(filePath: string): Promise<RunReport> {
@@ -93,8 +108,8 @@ function computeCaseDeltas(baseline: RunReport, candidate: RunReport): CaseDelta
 function printReport(baseline: RunReport, candidate: RunReport): void {
   console.log('');
   console.log('=== StudyAgent Eval Compare ===');
-  console.log(`baseline:  ${baseline.config.retrieval_mode}  @  ${baseline.timestamp}`);
-  console.log(`candidate: ${candidate.config.retrieval_mode}  @  ${candidate.timestamp}`);
+  console.log(`baseline:  ${baseline.config.retrieval_mode} / rerank=${baseline.config.rerank_provider}  @  ${baseline.timestamp}`);
+  console.log(`candidate: ${candidate.config.retrieval_mode} / rerank=${candidate.config.rerank_provider}  @  ${candidate.timestamp}`);
   console.log(`cases:     ${baseline.aggregate.n_cases} (baseline) vs ${candidate.aggregate.n_cases} (candidate)`);
   console.log('');
 

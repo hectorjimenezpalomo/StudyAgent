@@ -77,6 +77,7 @@ export interface RunReport {
     match_count: number;
     match_threshold: number;
     retrieval_mode: 'vector' | 'hybrid';
+    rerank_provider: 'none' | 'llm' | 'cohere';
   };
   cases: CaseResult[];
   aggregate: AggregateMetrics;

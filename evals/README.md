@@ -39,29 +39,38 @@ Resultados:
 - JSON detallado en `evals/results/<timestamp>_<mode>.json` (incluye respuestas
   literales y chunks recuperados por caso, útil para hacer post-mortem).
 
-### Comparar modos de retrieval (vector vs hybrid)
+### Comparar configuraciones (retrieval + reranker)
 
-El harness honra `AI_CONFIG.rag.retrievalMode`, que se controla con
-`RAG_RETRIEVAL_MODE`. Para medir el delta de A2 (hybrid search) frente al
-baseline vectorial:
+El harness honra dos flags:
+- `RAG_RETRIEVAL_MODE` (`vector` | `hybrid`).
+- `RERANK_PROVIDER` (`none` | `llm` | `cohere`).
+
+Los results se guardan como `<timestamp>_<mode>_<reranker>.json`, así que
+runs con configs distintas conviven sin pisarse.
 
 ```bash
-# baseline (vector solo)
-RAG_RETRIEVAL_MODE=vector npm run eval
+# baseline: vector solo, sin reranker
+RAG_RETRIEVAL_MODE=vector RERANK_PROVIDER=none npm run eval
 
-# candidate (pgvector + BM25 fusionado con RRF, requiere migración 004 aplicada)
-RAG_RETRIEVAL_MODE=hybrid npm run eval
+# A2: hybrid, sin reranker (requiere migración 004 aplicada)
+RAG_RETRIEVAL_MODE=hybrid RERANK_PROVIDER=none npm run eval
 
-# delta agregado + lista de casos que mejoran y regresan
+# A3: hybrid + reranker LLM
+RAG_RETRIEVAL_MODE=hybrid RERANK_PROVIDER=llm npm run eval
+
+# A3 con Cohere (requiere COHERE_API_KEY)
+RAG_RETRIEVAL_MODE=hybrid RERANK_PROVIDER=cohere COHERE_API_KEY=... npm run eval
+
+# delta entre los dos últimos runs con configs distintas
 npm run eval:compare
-```
 
-Sin argumentos, `eval:compare` auto-detecta el `*_vector.json` y `*_hybrid.json`
-más recientes en `evals/results/`. Para comparar dos runs concretos:
-
-```bash
+# delta entre runs concretos
 npm run eval:compare -- evals/results/<baseline>.json evals/results/<candidate>.json
 ```
+
+`eval:compare` sin argumentos toma los dos runs más recientes que tengan
+configs distintas (modo o reranker). Si los últimos N son la misma config,
+exige rutas explícitas.
 
 ## Formato del dataset
 
@@ -116,5 +125,4 @@ pregunta y copia sus `id` al campo `ground_truth_chunk_ids` del caso.
 - Subset rápido (≤5 casos) para iteración interactiva.
 - Workflow semanal en GitHub Actions (Fase D1) que corre el eval y comenta en
   una issue fija con el resumen.
-- Cuando llegue A3 (reranking), añadir un eje más en `eval:compare` para
-  comparar tres configuraciones (vector, hybrid, hybrid+rerank).
+- `eval:compare` que cruza 3 configs a la vez (matriz mode × reranker).
