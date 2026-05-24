@@ -8,7 +8,7 @@ import {
   buildSummaryPrompt,
 } from './prompts';
 import { AI_CONFIG } from './config';
-import { embedQuery } from './embeddings';
+import { retrieve, type RetrievalSupabase } from './retrieval';
 import type { ChunkResult, Flashcard, QuizQuestion } from '@/types';
 import type { Tables } from '@/lib/supabase/types';
 
@@ -19,8 +19,7 @@ type QueryResult<T> = { data: T | null; error: DbError | null };
 export type AgentToolContext = {
   userId: string;
   allowedDocumentIds: string[];
-  supabase: {
-    rpc(name: 'match_chunks', args: MatchChunksArgs): PromiseLike<QueryResult<ChunkResult[]>>;
+  supabase: RetrievalSupabase & {
     from(table: 'chunks'): {
       select(columns: string): {
         eq(column: string, value: string): {
@@ -32,14 +31,6 @@ export type AgentToolContext = {
       };
     };
   };
-};
-
-type MatchChunksArgs = {
-  query_embedding: string;
-  match_threshold: number;
-  match_count: number;
-  p_user_id: string;
-  p_document_ids: string[];
 };
 
 const quizQuestionSchema: z.ZodType<QuizQuestion> = z.object({
@@ -102,10 +93,6 @@ const explainConceptSchema = z.object({
   document_ids: z.array(z.string().uuid()).optional(),
 });
 
-function serializeEmbedding(embedding: number[]) {
-  return `[${embedding.join(',')}]`;
-}
-
 function filterDocumentIds(
   requestedDocumentIds: string[] | undefined,
   allowedDocumentIds: string[]
@@ -140,26 +127,21 @@ async function searchDocuments(
     };
   }
 
-  const embedding = await embedQuery(params.query);
-  const { data, error } = await context.supabase.rpc('match_chunks', {
-    query_embedding: serializeEmbedding(embedding),
-    match_threshold: AI_CONFIG.rag.matchThreshold,
-    match_count: params.top_k ?? AI_CONFIG.rag.matchCount,
-    p_user_id: context.userId,
-    p_document_ids: documentIds,
-  });
-
-  if (error) {
-    console.error('[ai/tools] search_documents', error);
+  try {
+    const chunks = await retrieve(context.supabase, {
+      query: params.query,
+      userId: context.userId,
+      documentIds,
+      topK: params.top_k ?? AI_CONFIG.rag.matchCount,
+    });
+    return { chunks };
+  } catch (err) {
+    console.error('[ai/tools] search_documents', err);
     return {
       chunks: [] as ChunkResult[],
       message: 'No se pudo buscar en los documentos.',
     };
   }
-
-  return {
-    chunks: data ?? [],
-  };
 }
 
 async function loadDocumentText(context: AgentToolContext, documentId: string) {
@@ -329,5 +311,4 @@ export const __toolsTestUtils = {
   chunksToContext,
   filterDocumentIds,
   searchDocuments,
-  serializeEmbedding,
 };

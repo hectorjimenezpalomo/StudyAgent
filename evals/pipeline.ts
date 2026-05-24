@@ -10,9 +10,9 @@
 import { openai } from '@ai-sdk/openai';
 import { generateText } from 'ai';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { AI_CONFIG } from '../lib/ai/config';
-import { embedQuery } from '../lib/ai/embeddings';
+import { AI_CONFIG, type RetrievalMode } from '../lib/ai/config';
 import { buildRagPrompt } from '../lib/ai/prompts';
+import { retrieve, type RetrievalSupabase } from '../lib/ai/retrieval';
 
 export interface RetrievedChunk {
   id: string;
@@ -27,19 +27,7 @@ export interface PipelineResult {
   contextText: string;
   retrieval_ms: number;
   generation_ms: number;
-}
-
-interface MatchChunksRow {
-  id: string;
-  document_id: string;
-  content: string;
-  chunk_index: number;
-  page_number: number | null;
-  similarity: number;
-}
-
-function serializeEmbedding(embedding: number[]): string {
-  return `[${embedding.join(',')}]`;
+  mode: RetrievalMode;
 }
 
 function chunksToContext(chunks: RetrievedChunk[]): string {
@@ -55,24 +43,19 @@ export async function runPipeline(
   supabase: SupabaseClient,
   userId: string,
   question: string,
-  documentIds: string[]
+  documentIds: string[],
+  mode: RetrievalMode = AI_CONFIG.rag.retrievalMode
 ): Promise<PipelineResult> {
   const tRetrievalStart = Date.now();
-  const embedding = await embedQuery(question);
-  const { data, error } = await supabase.rpc('match_chunks', {
-    query_embedding: serializeEmbedding(embedding),
-    match_threshold: AI_CONFIG.rag.matchThreshold,
-    match_count: AI_CONFIG.rag.matchCount,
-    p_user_id: userId,
-    p_document_ids: documentIds,
+  const rows = await retrieve(supabase as unknown as RetrievalSupabase, {
+    query: question,
+    userId,
+    documentIds,
+    topK: AI_CONFIG.rag.matchCount,
+    mode,
   });
   const retrieval_ms = Date.now() - tRetrievalStart;
 
-  if (error) {
-    throw new Error(`[evals/pipeline] match_chunks failed: ${error.message}`);
-  }
-
-  const rows = (data ?? []) as MatchChunksRow[];
   const retrieved: RetrievedChunk[] = rows.map((row) => ({
     id: row.id,
     content: row.content,
@@ -96,5 +79,6 @@ export async function runPipeline(
     contextText,
     retrieval_ms,
     generation_ms,
+    mode,
   };
 }

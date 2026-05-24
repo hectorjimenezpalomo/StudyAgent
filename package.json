@@ -12,7 +12,8 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "db:types": "supabase gen types typescript --local > lib/supabase/types.ts",
-    "eval": "node --no-warnings=ModuleTypelessPackageJsonWarning --env-file=.env.local evals/runner.ts"
+    "eval": "node --no-warnings=ModuleTypelessPackageJsonWarning --env-file=.env.local evals/runner.ts",
+    "eval:compare": "node --no-warnings=ModuleTypelessPackageJsonWarning evals/compare.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^1.0.0",

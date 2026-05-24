@@ -76,6 +76,7 @@ export interface RunReport {
     embedding_dimensions: number;
     match_count: number;
     match_threshold: number;
+    retrieval_mode: 'vector' | 'hybrid';
   };
   cases: CaseResult[];
   aggregate: AggregateMetrics;

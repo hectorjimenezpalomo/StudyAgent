@@ -36,8 +36,32 @@ npm run eval
 
 Resultados:
 - Tabla resumen en consola.
-- JSON detallado en `evals/results/<timestamp>.json` (incluye respuestas
+- JSON detallado en `evals/results/<timestamp>_<mode>.json` (incluye respuestas
   literales y chunks recuperados por caso, útil para hacer post-mortem).
+
+### Comparar modos de retrieval (vector vs hybrid)
+
+El harness honra `AI_CONFIG.rag.retrievalMode`, que se controla con
+`RAG_RETRIEVAL_MODE`. Para medir el delta de A2 (hybrid search) frente al
+baseline vectorial:
+
+```bash
+# baseline (vector solo)
+RAG_RETRIEVAL_MODE=vector npm run eval
+
+# candidate (pgvector + BM25 fusionado con RRF, requiere migración 004 aplicada)
+RAG_RETRIEVAL_MODE=hybrid npm run eval
+
+# delta agregado + lista de casos que mejoran y regresan
+npm run eval:compare
+```
+
+Sin argumentos, `eval:compare` auto-detecta el `*_vector.json` y `*_hybrid.json`
+más recientes en `evals/results/`. Para comparar dos runs concretos:
+
+```bash
+npm run eval:compare -- evals/results/<baseline>.json evals/results/<candidate>.json
+```
 
 ## Formato del dataset
 
@@ -89,10 +113,8 @@ pregunta y copia sus `id` al campo `ground_truth_chunk_ids` del caso.
 
 ## Trabajo pendiente sobre este harness
 
-- Soporte para baseline vs candidate: ejecutar dos configuraciones y reportar
-  delta (necesario cuando lleguen A2 hybrid y A3 reranking).
-- Comparador `compare.ts` que toma dos `RunReport` y muestra mejoras/regresiones
-  por caso.
 - Subset rápido (≤5 casos) para iteración interactiva.
 - Workflow semanal en GitHub Actions (Fase D1) que corre el eval y comenta en
   una issue fija con el resumen.
+- Cuando llegue A3 (reranking), añadir un eje más en `eval:compare` para
+  comparar tres configuraciones (vector, hybrid, hybrid+rerank).

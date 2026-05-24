@@ -10,19 +10,20 @@ Siguiente bloque de trabajo: convertir el proyecto en un caso de estudio de **AI
 
 Objetivo: pasar de "RAG básico que funciona" a "RAG medible e iterable".
 
-### A1. Harness de evaluación (`evals/`)
-- Dataset etiquetado en `evals/dataset.jsonl`: 30-40 pares `{question, ground_truth_answer, ground_truth_chunk_ids, document_ids}`.
+### A1. Harness de evaluación (`evals/`) — hecho
+- Dataset etiquetado en `evals/dataset.jsonl`.
 - Runner (`evals/runner.ts`) que ejecuta el pipeline real (`search_documents` + generación) sobre cada caso.
 - Métricas de retrieval: `recall@k`, `MRR`, `hit_rate`.
 - Métricas de generación: `faithfulness` y `answer_relevancy` con LLM-as-judge (`generateObject` sobre `gpt-4o-mini`).
-- Output JSON en `evals/results/<timestamp>.json` + tabla en consola.
-- Script `npm run eval`.
+- Output JSON en `evals/results/<timestamp>_<mode>.json` + tabla en consola.
+- Scripts `npm run eval` y `npm run eval:compare`.
 
-### A2. Hybrid search (vector + BM25)
-- Migración nueva con índice GIN sobre `tsvector` derivado de `chunks.content`.
-- RPC `match_chunks_hybrid` que combina pgvector + `ts_rank_cd` con Reciprocal Rank Fusion.
-- Tool `search_documents` con flag `mode: 'vector' | 'hybrid'`.
-- Validar contra A1 y publicar delta de `recall@5` en el README.
+### A2. Hybrid search (vector + BM25) — hecho
+- Migración `004_match_chunks_hybrid.sql`: columna generada `chunks.content_tsv`, índice GIN y RPC `match_chunks_hybrid` con Reciprocal Rank Fusion server-side.
+- Capa `lib/ai/retrieval.ts` que rutea por modo (`vector` | `hybrid`), consumida por `lib/ai/tools.ts` y `evals/pipeline.ts`.
+- Detrás de flag `RAG_RETRIEVAL_MODE` (default `vector`) para poder medir antes de flipear.
+- Comparador `evals/compare.ts` (`npm run eval:compare`) que reporta delta agregado y casos que mejoran o regresan.
+- Pendiente: aplicar la migración remota, correr eval en ambos modos y registrar el delta en el README.
 
 ### A3. Reranking con cross-encoder
 - Etapa intermedia retrieve(top-20) → rerank → top-5.
