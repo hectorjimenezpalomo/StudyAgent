@@ -1,0 +1,13 @@
+// evals/dataset.jsonl — un caso por línea. Líneas vacías y comentarios "//" ignorados.
+// Schema: { id, question, ground_truth_answer, ground_truth_chunk_ids[], document_ids[] }
+//
+// `document_ids` debe apuntar a documentos ya ingestados en tu Supabase (status=ready).
+// `ground_truth_chunk_ids` es opcional pero recomendado: sin él, las métricas de
+// retrieval (recall@k, MRR, hit_rate@k) son 0 y solo se evalúa generación.
+//
+// Pasos para poblar:
+//   1. Sube tus PDFs vía /documents en la app.
+//   2. Espera a que pasen a status=ready.
+//   3. Recupera document_ids y los chunk ids relevantes con un SELECT en Supabase Studio.
+//   4. Sustituye los placeholders de abajo por casos reales.
+{"id": "example-01", "question": "¿Qué se entiende por gradiente descendente?", "ground_truth_answer": "Un método iterativo de optimización que actualiza parámetros en la dirección opuesta al gradiente para minimizar una función de pérdida.", "ground_truth_chunk_ids": [], "document_ids": ["00000000-0000-0000-0000-000000000000"]}

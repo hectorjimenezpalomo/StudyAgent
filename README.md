@@ -63,6 +63,16 @@ npm run test:e2e
 El test E2E se omite automaticamente si no existen `E2E_USER_EMAIL` y
 `E2E_USER_PASSWORD`.
 
+## Evaluación del RAG
+
+Harness offline que mide retrieval (recall@k, MRR, hit_rate@k), generación
+(faithfulness, answer_relevancy via LLM-as-judge) y latencia contra un
+dataset etiquetado. Detalles en `evals/README.md`.
+
+```bash
+npm run eval
+```
+
 ## Demo
 
 1. Crea o configura el usuario de demo indicado en `DEMO_USER_EMAIL`.

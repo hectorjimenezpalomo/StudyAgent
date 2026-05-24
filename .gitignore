@@ -14,3 +14,4 @@ test-results
 .turbo
 .vercel
 *.tsbuildinfo
+evals/results/*.json

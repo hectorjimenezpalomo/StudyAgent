@@ -71,6 +71,22 @@ Bucket `documents`, privado, límite 25 MB, mime permitido `application/pdf`. Pa
 - `agent`: `maxSteps=5`, `maxTokensPerResponse=2000`
 - `limits`: `maxUploadBytes`, `maxQuizQuestions=20`, `maxFlashcards=30`
 
+## Evaluación
+
+Harness offline en `evals/`. Mide el pipeline RAG core (`embed → match_chunks → generateText`) contra un dataset etiquetado y reporta retrieval (recall@k, MRR, hit_rate@k), generation (faithfulness, answer_relevancy via LLM-as-judge) y latencia.
+
+| archivo | rol |
+|---|---|
+| `evals/dataset.jsonl` | Casos: `{id, question, ground_truth_answer, ground_truth_chunk_ids[], document_ids[]}` |
+| `evals/types.ts` | Schemas zod y tipos del reporte |
+| `evals/metrics.ts` | `recallAtK`, `meanReciprocalRank`, `hitRateAtK`, `average`, `percentile` (puras) |
+| `evals/judge.ts` | LLM-as-judge: `judgeFaithfulness`, `judgeAnswerRelevancy` |
+| `evals/pipeline.ts` | `runPipeline(supabase, userId, question, documentIds)` |
+| `evals/runner.ts` | CLI entry, ejecutable con `npm run eval` |
+| `evals/results/` | `<timestamp>.json` por run, gitignored |
+
+Detalles operativos en `evals/README.md`.
+
 ## Estructura
 
 ```
@@ -86,5 +102,6 @@ lib/
   supabase/      client.ts, server.ts, admin.ts, types.ts (generado)
   ai/            chunker, embeddings, ingest, tools, prompts, config
   chat/          persistence (conversations + messages)
+evals/           harness offline (npm run eval)
 supabase/migrations/   001 schema, 002 match_chunks, 003 storage
 ```
