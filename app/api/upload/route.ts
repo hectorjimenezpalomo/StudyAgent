@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import { AI_CONFIG } from '@/lib/ai/config';
-import { ingestDocument } from '@/lib/ai/ingest';
 import { createClient } from '@/lib/supabase/server';
 
 export const maxDuration = 60;
@@ -95,9 +94,31 @@ export async function POST(req: Request) {
     return Response.json({ error: 'Error al subir PDF' }, { status: 500 });
   }
 
-  void ingestDocument(documentId).catch((error) => {
-    console.error('[api/upload] ingest', error);
+  const { error: queueError } = await supabase.from('ingestion_jobs').insert({
+    document_id: documentId,
+    user_id: user.id,
   });
+
+  if (queueError) {
+    console.error('[api/upload] enqueue ingest', queueError);
+
+    const { error: cleanupStorageError } = await supabase.storage
+      .from('documents')
+      .remove([storagePath]);
+    if (cleanupStorageError) {
+      console.error('[api/upload] cleanup storage', cleanupStorageError);
+    }
+
+    const { error: cleanupDocumentError } = await supabase
+      .from('documents')
+      .delete()
+      .eq('id', documentId);
+    if (cleanupDocumentError) {
+      console.error('[api/upload] cleanup document after queue', cleanupDocumentError);
+    }
+
+    return Response.json({ error: 'Error al preparar la ingesta' }, { status: 500 });
+  }
 
   return Response.json({ document_id: documentId });
 }

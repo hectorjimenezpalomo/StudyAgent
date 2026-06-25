@@ -18,6 +18,11 @@ export interface Chunk {
   pageNumber?: number;
 }
 
+export interface ExtractedPage {
+  pageNumber: number;
+  text: string;
+}
+
 const CHARS_PER_TOKEN = 4;
 export const TARGET_CHARS = AI_CONFIG.rag.chunkSizeTokens * CHARS_PER_TOKEN;
 export const OVERLAP_CHARS = AI_CONFIG.rag.chunkOverlapTokens * CHARS_PER_TOKEN;
@@ -88,6 +93,28 @@ export function chunkText(text: string): Chunk[] {
     const overlapStart = Math.max(0, end - OVERLAP_CHARS);
     const nextStart = moveToWordBoundary(normalized, overlapStart);
     start = nextStart > start ? nextStart : end;
+  }
+
+  return chunks;
+}
+
+/**
+ * Conserva la procedencia por página cuando el extractor puede proporcionarla.
+ * El solape se mantiene dentro de cada página para evitar atribuir texto de una
+ * página a otra en las citas posteriores.
+ */
+export function chunkPages(pages: ExtractedPage[]): Chunk[] {
+  const chunks: Chunk[] = [];
+
+  for (const page of pages) {
+    const pageChunks = chunkText(page.text);
+    for (const chunk of pageChunks) {
+      chunks.push({
+        ...chunk,
+        index: chunks.length,
+        pageNumber: page.pageNumber,
+      });
+    }
   }
 
   return chunks;

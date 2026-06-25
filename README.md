@@ -1,101 +1,142 @@
 # StudyAgent
 
-Asistente de estudio con IA basado en PDFs privados. Permite subir documentos,
-ingerirlos con embeddings, chatear con RAG, usar herramientas del agente, generar
-quizzes/flashcards y volver a conversaciones pasadas.
+StudyAgent convierte PDFs privados en un asistente de estudio con búsqueda
+grounded, tools para practicar y conversaciones persistentes. Es un proyecto de
+applied AI diseñado para hacer visibles sus decisiones técnicas, no para
+presentar un chatbot genérico como un producto terminado.
+
+## Qué hace hoy
+
+- Sube PDFs a un bucket privado por usuario y los procesa mediante una cola
+  durable respaldada por Postgres.
+- Extrae texto con `pdf-parse`, conserva el número de página cuando el
+  extractor lo aporta, crea chunks de ~700 tokens con solape de 100 y genera
+  embeddings de 1536 dimensiones.
+- Recupera contexto mediante pgvector/HNSW; ofrece hybrid search BM25 + RRF y
+  reranking como flags evaluables, no como defaults sin medir.
+- Usa tools con schemas Zod para buscar, resumir, explicar y generar quizzes o
+  flashcards; las herramientas devuelven fuentes enlazables al documento.
+- Aísla documentos, chunks y conversaciones mediante Supabase Auth, RLS,
+  Storage privado y un filtro de documentos permitido dentro de cada tool.
+- Registra trazas sin contenido sensible y permite feedback útil/no útil sobre
+  respuestas persistidas para revisar calidad en `/admin`.
+
+```mermaid
+flowchart LR
+  U[Usuario autenticado] --> UP[Upload PDF]
+  UP --> ST[Supabase Storage privado]
+  UP --> Q[(ingestion_jobs)]
+  Q --> W[Worker cron protegido]
+  W --> P[pdf-parse + chunking]
+  P --> E[OpenAI embeddings 1536d]
+  E --> V[(Postgres + pgvector)]
+  U --> C[Chat]
+  C --> A[Agent tools]
+  A --> V
+  A --> R[Respuesta + fuentes]
+```
 
 ## Stack
 
-- Next.js 16 + React 19 + TypeScript
+- Next.js 16 App Router, React 19 y TypeScript estricto
 - Supabase Auth, Postgres, Storage y pgvector
-- Vercel AI SDK v4 con tool calling
-- OpenAI `gpt-4o-mini` y `text-embedding-3-small`
-- Vitest y Playwright
+- Vercel AI SDK v4, OpenAI `gpt-4o-mini` y `text-embedding-3-small`
+- `pdf-parse`, Zod, Vitest y Playwright
 
-## Setup Local
+## Inicio local
+
+Requiere Node 20+, Docker y Supabase CLI.
+
+macOS/Linux:
 
 ```bash
 npm install
 cp .env.example .env.local
-```
-
-Rellena `.env.local` con Supabase y OpenAI:
-
-```bash
-NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
-NEXT_PUBLIC_SUPABASE_ANON_KEY=...
-SUPABASE_SERVICE_ROLE_KEY=...
-OPENAI_API_KEY=...
-ADMIN_EMAILS=tu-email@example.com
-DEMO_USER_EMAIL=demo@example.com
-E2E_USER_EMAIL=demo@example.com
-E2E_USER_PASSWORD=...
-```
-
-Con Supabase local:
-
-```bash
 supabase start
 supabase db reset
 npm run db:types
-```
-
-Arranca la app:
-
-```bash
 npm run dev
 ```
 
-## Verificacion
+PowerShell:
+
+```powershell
+npm install
+Copy-Item .env.example .env.local
+supabase start
+supabase db reset
+npm run db:types
+npm run dev
+```
+
+Completa `.env.local` con Supabase, OpenAI, `ADMIN_EMAILS` y un `CRON_SECRET`
+largo. `CHAT_REQUESTS_PER_MINUTE` limita el chat; las tarifas de tokens son
+opcionales y solo alimentan la estimación de coste en `/admin`.
+
+## Ingesta durable
+
+El upload crea un documento `pending`, guarda el archivo y encola un job. El
+worker `GET /api/internal/ingest` reclama un job de forma atómica, reintenta
+fallos transitorios hasta tres veces y deja un estado terminal visible al
+usuario. En Vercel, `vercel.json` lo programa cada cinco minutos y el endpoint
+exige `Authorization: Bearer $CRON_SECRET`.
+
+Para desarrollo, invoca el worker manualmente tras subir un PDF:
+
+```powershell
+Invoke-WebRequest http://localhost:3000/api/internal/ingest `
+  -Headers @{ Authorization = "Bearer $env:CRON_SECRET" }
+```
+
+## Calidad RAG y límites conocidos
+
+El harness en `evals/` mide recall@k, MRR, hit rate, faithfulness, relevancia y
+latencia. No se incluyen documentos privados ni IDs ficticios en Git: antes de
+afirmar una mejora de hybrid search o reranking, añade un dataset etiquetado a
+tu instancia y publica el delta del runner.
 
 ```bash
+npm run eval
+npm run eval:compare
+```
+
+Limitaciones actuales: no hay OCR para PDFs escaneados, las citas enlazan a la
+lista de documentos (no a un visor PDF con resaltado), y la cuota de chat es
+un fixed window sencillo, no un control de facturación empresarial.
+
+## Verificación
+
+```bash
+npm run lint
 npm run typecheck
 npm run test
 npm run build
 ```
 
-E2E recomendado antes de demo:
+`npm run test:e2e` requiere credenciales reales y servicios configurados. El
+workflow de CI ejecuta lint, typecheck, tests y build en cada push o PR a
+`main`.
 
-```bash
-npm run test:e2e
-```
+## Demo de dos minutos
 
-El test E2E se omite automaticamente si no existen `E2E_USER_EMAIL` y
-`E2E_USER_PASSWORD`.
+1. Entra con el usuario demo y muestra un PDF ya `ready`.
+2. Pregunta un hecho concreto y abre `search_documents` para enseñar fuentes.
+3. Genera un quiz y flashcards; ambas salidas son estructuradas.
+4. Abre una fuente y recarga el chat para mostrar procedencia y persistencia.
+5. Explica que hybrid/reranking se activan solo tras medirlos contra el
+   harness, y que las trazas no almacenan texto de PDFs ni respuestas.
 
-## Evaluación del RAG
+## Despliegue
 
-Harness offline que mide retrieval (recall@k, MRR, hit_rate@k), generación
-(faithfulness, answer_relevancy via LLM-as-judge) y latencia contra un
-dataset etiquetado. Detalles en `evals/README.md`.
+1. Aplica las migraciones en Supabase y verifica el bucket privado `documents`.
+2. Configura las variables de `.env.example` en Vercel, incluido `CRON_SECRET`.
+3. Despliega `main`; Vercel ejecutará el worker definido en `vercel.json`.
+4. Comprueba `/login`, `/documents`, `/chat`, la ejecución cron y `/admin`.
 
-```bash
-npm run eval
-```
+## Documentación
 
-## Demo
-
-1. Crea o configura el usuario de demo indicado en `DEMO_USER_EMAIL`.
-2. Inicia sesion con esa cuenta.
-3. Sube dos o tres PDFs publicos de ejemplo desde `/documents`.
-4. Espera a que queden en estado `ready`.
-5. En `/chat`, pregunta, pide un resumen, genera un quiz y crea flashcards.
-6. Recarga el hilo para comprobar que la conversacion persiste.
-
-Video Loom: pendiente de grabar tras desplegar la version final.
-
-## Despliegue en Vercel
-
-1. Crea un proyecto Supabase remoto y aplica las migraciones de `supabase/migrations/`.
-2. Configura el bucket privado `documents` y las politicas incluidas en las migraciones.
-3. En Vercel, configura las variables de `.env.example`.
-4. Despliega `main`.
-5. Verifica `/login`, `/documents`, `/chat` y `/admin` con un email incluido en `ADMIN_EMAILS`.
-
-## Documentacion
-
-- `AGENTS.md`: reglas obligatorias de implementacion.
-- `CODEX.md`: briefing especifico para Codex.
-- `CLAUDE.md`: briefing equivalente para Claude Code.
-- `ARCHITECTURE.md`: tablas, rutas, tipos y herramientas.
-- `ROADMAP.md`: fases del proyecto.
+- `ARCHITECTURE.md`: contratos de tablas, rutas, tools y configuración.
+- `evals/README.md`: formato del dataset y cómo interpretar los resultados.
+- `ROADMAP.md`: mejoras de RAG y producto todavía pendientes.
+- `docs/gcp-mapping.md`: ruta de despliegue GCP sin afirmar una migración no realizada.
+- `AGENTS.md`: reglas de implementación y seguridad.

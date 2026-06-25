@@ -2,8 +2,9 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useChat } from '@ai-sdk/react';
+import { MessageFeedback } from './MessageFeedback';
 import { ToolCallDisplay } from './ToolCallDisplay';
 import type { ConversationSummary, StoredUiMessage } from '@/lib/chat/persistence';
 
@@ -36,13 +37,17 @@ function formatConversationDate(value: string) {
 }
 
 function MessageBubble({
+  id,
   role,
   content,
   toolInvocations,
+  canSubmitFeedback,
 }: {
+  id: string;
   role: string;
   content: string;
   toolInvocations: ToolInvocationLike[];
+  canSubmitFeedback: boolean;
 }) {
   const isUser = role === 'user';
 
@@ -75,6 +80,7 @@ function MessageBubble({
             ))}
           </div>
         ) : null}
+        {!isUser && content && canSubmitFeedback ? <MessageFeedback messageId={id} /> : null}
       </div>
     </div>
   );
@@ -91,6 +97,10 @@ export function ChatInterface({
 }) {
   const router = useRouter();
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const persistedMessageIds = useMemo(
+    () => new Set(initialMessages.map((message) => message.id)),
+    [initialMessages]
+  );
   const [conversationId, setConversationId] = useState(initialConversationId);
   const {
     messages,
@@ -192,9 +202,11 @@ export function ChatInterface({
               {messages.map((message) => (
                 <MessageBubble
                   key={message.id}
+                  id={message.id}
                   role={message.role}
                   content={message.content}
                   toolInvocations={getToolInvocations(message)}
+                  canSubmitFeedback={persistedMessageIds.has(message.id)}
                 />
               ))}
               {status === 'submitted' ? (

@@ -13,6 +13,16 @@ function parseRerankProvider(value: string | undefined): RerankProvider {
   return 'none';
 }
 
+function parsePositiveInteger(value: string | undefined, fallback: number) {
+  const parsed = Number.parseInt(value ?? '', 10);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseNonNegativeNumber(value: string | undefined, fallback: number) {
+  const parsed = Number.parseFloat(value ?? '');
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
 export const AI_CONFIG = {
   chatModel: process.env.OPENAI_CHAT_MODEL ?? 'gpt-4o-mini',
   embeddingModel: process.env.OPENAI_EMBEDDING_MODEL ?? 'text-embedding-3-small',
@@ -51,9 +61,26 @@ export const AI_CONFIG = {
   },
 
   limits: {
-    maxUploadBytes: parseInt(process.env.MAX_UPLOAD_BYTES ?? '26214400', 10),
+    maxUploadBytes: parsePositiveInteger(process.env.MAX_UPLOAD_BYTES, 26214400),
     maxQuizQuestions: 20,
     maxFlashcards: 30,
+    chatRequestsPerMinute: parsePositiveInteger(
+      process.env.CHAT_REQUESTS_PER_MINUTE,
+      20
+    ),
+  },
+
+  observability: {
+    // Set current provider rates through env vars. Zero means cost is tracked
+    // as unavailable instead of guessing from a stale hardcoded price.
+    chatInputCostUsdPerMillion: parseNonNegativeNumber(
+      process.env.CHAT_INPUT_COST_USD_PER_MILLION,
+      0
+    ),
+    chatOutputCostUsdPerMillion: parseNonNegativeNumber(
+      process.env.CHAT_OUTPUT_COST_USD_PER_MILLION,
+      0
+    ),
   },
 } as const;
 

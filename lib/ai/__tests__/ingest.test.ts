@@ -9,6 +9,7 @@ import type { TablesInsert } from '@/lib/supabase/types';
 
 const DOCUMENT_ID = '11111111-1111-4111-8111-111111111111';
 const USER_ID = '22222222-2222-4222-8222-222222222222';
+const EMBEDDING = Array.from({ length: 1536 }, () => 0.1);
 
 type UpdateCall = {
   table: 'documents';
@@ -97,7 +98,7 @@ function createDeps(
 ): IngestDependencies {
   return {
     supabase,
-    embedTexts: async (texts) => texts.map(() => [0.1, 0.2, 0.3]),
+    embedTexts: async (texts) => texts.map(() => EMBEDDING),
     parsePdf: async () => ({
       text: 'Este PDF contiene texto suficiente para crear un chunk.',
       numpages: 2,
@@ -130,7 +131,7 @@ describe('runIngestDocument', () => {
       user_id: USER_ID,
       chunk_index: 0,
       page_number: null,
-      embedding: '[0.1,0.2,0.3]',
+      embedding: __ingestTestUtils.serializeEmbedding(EMBEDDING),
     });
     expect(updates.at(-1)?.values).toMatchObject({
       status: 'ready',
@@ -178,5 +179,22 @@ describe('runIngestDocument', () => {
 
   it('serializa embeddings para pgvector', () => {
     expect(__ingestTestUtils.serializeEmbedding([1, 2.5, -3])).toBe('[1,2.5,-3]');
+  });
+
+  it('marca error si OpenAI devuelve embeddings con otra dimension', async () => {
+    const { supabase, updates } = createSupabaseMock();
+
+    const result = await runIngestDocument(
+      DOCUMENT_ID,
+      createDeps(supabase, {
+        embedTexts: async () => [[0.1, 0.2]],
+      })
+    );
+
+    expect(result).toMatchObject({ ok: false });
+    expect(updates.at(-1)?.values).toMatchObject({
+      status: 'error',
+      error_message: 'OpenAI devolvio embeddings con una dimension inesperada',
+    });
   });
 });

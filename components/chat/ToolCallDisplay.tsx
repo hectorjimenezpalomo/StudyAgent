@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import type { Flashcard, QuizQuestion } from '@/types';
 
 interface Props {
@@ -8,6 +9,13 @@ interface Props {
   result?: unknown;
   state: 'partial-call' | 'call' | 'result';
 }
+
+type SourceCitation = {
+  chunk_id?: string;
+  document_id: string;
+  document_title: string;
+  page_number: number | null;
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -39,6 +47,30 @@ function isFlashcardsResult(value: unknown): value is { cards: Flashcard[]; mess
         typeof card.answer === 'string'
     )
   );
+}
+
+function isSourceCitation(value: unknown): value is SourceCitation {
+  return (
+    isRecord(value) &&
+    typeof value.document_id === 'string' &&
+    typeof value.document_title === 'string' &&
+    (typeof value.page_number === 'number' || value.page_number === null) &&
+    (typeof value.chunk_id === 'string' || value.chunk_id === undefined)
+  );
+}
+
+function getSources(value: unknown): SourceCitation[] {
+  if (!isRecord(value) || !Array.isArray(value.sources)) {
+    return [];
+  }
+
+  const unique = new Map<string, SourceCitation>();
+  for (const source of value.sources) {
+    if (!isSourceCitation(source)) continue;
+    const key = `${source.document_id}:${source.page_number ?? 'document'}`;
+    unique.set(key, source);
+  }
+  return [...unique.values()];
 }
 
 function stateLabel(state: Props['state']) {
@@ -128,10 +160,36 @@ function FlashcardsResult({ result }: { result: { cards: Flashcard[]; message?: 
   );
 }
 
+function Sources({ sources }: { sources: SourceCitation[] }) {
+  if (sources.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="mt-3 border-t border-slate-200 pt-3">
+      <p className="text-xs font-medium text-slate-500">Fuentes recuperadas</p>
+      <ul className="mt-2 flex flex-wrap gap-2">
+        {sources.map((source) => (
+          <li key={`${source.document_id}-${source.page_number ?? 'document'}`}>
+            <Link
+              href={`/documents#document-${source.document_id}`}
+              className="rounded-full border border-cyan-200 bg-cyan-50 px-2 py-1 text-xs font-medium text-cyan-900 transition hover:bg-cyan-100"
+            >
+              {source.document_title}
+              {source.page_number ? ` · p. ${source.page_number}` : ''}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function ToolCallDisplay({ toolName, args, result, state }: Props) {
   const showStructuredQuiz = toolName === 'generate_quiz' && isQuizResult(result);
   const showStructuredFlashcards =
     toolName === 'generate_flashcards' && isFlashcardsResult(result);
+  const sources = getSources(result);
 
   return (
     <div className="my-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
@@ -152,21 +210,24 @@ export function ToolCallDisplay({ toolName, args, result, state }: Props) {
       </details>
 
       {state === 'result' ? (
-        showStructuredQuiz ? (
-          <QuizResult result={result} />
-        ) : showStructuredFlashcards ? (
-          <FlashcardsResult result={result} />
-        ) : (
-          <details
-            className="mt-2"
-            open={toolName === 'generate_summary' || toolName === 'explain_concept'}
-          >
-            <summary className="cursor-pointer text-xs font-medium text-slate-500">
-              Ver resultado
-            </summary>
-            <PrettyJson value={result} />
-          </details>
-        )
+        <>
+          {showStructuredQuiz ? (
+            <QuizResult result={result} />
+          ) : showStructuredFlashcards ? (
+            <FlashcardsResult result={result} />
+          ) : (
+            <details
+              className="mt-2"
+              open={toolName === 'generate_summary' || toolName === 'explain_concept'}
+            >
+              <summary className="cursor-pointer text-xs font-medium text-slate-500">
+                Ver resultado
+              </summary>
+              <PrettyJson value={result} />
+            </details>
+          )}
+          <Sources sources={sources} />
+        </>
       ) : (
         <p className="mt-2 text-xs text-slate-500">Esperando resultado...</p>
       )}

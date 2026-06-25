@@ -1,0 +1,3 @@
+-- StudyAgent intentionally ships without demo users or private documents.
+-- This file keeps `supabase db reset` reproducible while production-like data
+-- is created through the authenticated upload flow.

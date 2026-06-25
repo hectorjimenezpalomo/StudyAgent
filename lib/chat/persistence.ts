@@ -237,3 +237,33 @@ export async function touchConversation(
     console.error('[api/chat] conversation touch', error);
   }
 }
+
+/**
+ * Rebuilds model history from RLS-protected persistence instead of trusting a
+ * client-supplied assistant or system transcript.
+ */
+export async function getConversationPromptMessages(
+  supabase: AppSupabaseClient,
+  conversationId: string
+) {
+  const { data, error } = await supabase
+    .from('messages')
+    .select('role, content')
+    .eq('conversation_id', conversationId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('[api/chat] prompt history', error);
+    return { messages: null, error: 'Error al cargar el historial' };
+  }
+
+  const messages = (data ?? [])
+    .filter((message) => message.role === 'user' || message.role === 'assistant')
+    .map((message) => ({
+      role: message.role as 'user' | 'assistant',
+      content: extractStoredText(message.content),
+    }))
+    .filter((message) => message.content.trim().length > 0);
+
+  return { messages, error: null };
+}

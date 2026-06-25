@@ -42,6 +42,7 @@ export interface LatencyMetrics {
 export interface CaseResult {
   case_id: string;
   question: string;
+  has_ground_truth: boolean;
   retrieval: RetrievalMetrics;
   generation: GenerationMetrics;
   latency: LatencyMetrics;

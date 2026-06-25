@@ -4,7 +4,17 @@
 
 Fases 1-5 completas. Auth, upload, ingesta con embeddings, chat con RAG, agente con tool calling, persistencia de conversaciones, tests unitarios y e2e, despliegue.
 
-Siguiente bloque de trabajo: convertir el proyecto en un caso de estudio de **AI applied engineering** con evaluación, observabilidad, recuperación avanzada y CI.
+Siguiente bloque de trabajo: convertir el proyecto en un caso de estudio de **AI applied engineering** con evaluación reproducible y mejoras avanzadas de recuperación.
+
+## Fiabilidad — hecho en código, pendiente de validar en despliegue
+
+- Cola de ingesta durable (`ingestion_jobs`) con claim atómico, retry y endpoint cron protegido.
+- Rate limit de chat por usuario y protección de mensajes `system` enviados por cliente.
+- Trazas sin contenido sensible para chat e ingesta; panel admin con métricas globales tras comprobar allowlist.
+- Citas con título de documento y número de página cuando `pdf-parse` lo proporciona.
+- CI, lint moderno, seed vacío y migración de `middleware.ts` a `proxy.ts`.
+
+Pendiente operativo: aplicar migración 005 en Supabase remoto, configurar `CRON_SECRET` y comprobar la ejecución cron en Vercel.
 
 ## Fase A — RAG avanzado y evaluación
 

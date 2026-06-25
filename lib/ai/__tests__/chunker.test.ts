@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { chunkText } from '../chunker';
+import { chunkPages, chunkText } from '../chunker';
 
 /**
  * Estos tests definen el comportamiento esperado del chunker.
@@ -51,5 +51,17 @@ describe('chunkText', () => {
     chunks.forEach((chunk, i) => {
       expect(chunk.index).toBe(i);
     });
+  });
+
+  it('conserva el número de página al chunkear texto extraído por página', () => {
+    const chunks = chunkPages([
+      { pageNumber: 2, text: 'Contenido de la página dos.' },
+      { pageNumber: 3, text: 'Contenido de la página tres.' },
+    ]);
+
+    expect(chunks).toEqual([
+      expect.objectContaining({ index: 0, pageNumber: 2 }),
+      expect.objectContaining({ index: 1, pageNumber: 3 }),
+    ]);
   });
 });

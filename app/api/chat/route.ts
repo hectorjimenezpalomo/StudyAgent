@@ -5,29 +5,68 @@ import { AI_CONFIG } from '@/lib/ai/config';
 import { SYSTEM_PROMPT_AGENT } from '@/lib/ai/prompts';
 import { createAgentTools, type AgentToolContext } from '@/lib/ai/tools';
 import {
+  getConversationPromptMessages,
   getOrCreateConversation,
   persistChatMessage,
   touchConversation,
 } from '@/lib/chat/persistence';
+import { recordUserTrace } from '@/lib/observability/traces';
 import { createClient } from '@/lib/supabase/server';
 import type { Tables } from '@/lib/supabase/types';
 
 export const maxDuration = 60;
 
-type DocumentRow = Pick<Tables<'documents'>, 'id'>;
+type DocumentRow = Pick<Tables<'documents'>, 'id' | 'title'>;
+
+const MAX_CHAT_REQUEST_BYTES = 100_000;
+const MAX_MESSAGE_CHARS = 4_000;
+const MAX_CLIENT_MESSAGES = 100;
 
 const messageSchema = z
   .object({
-    role: z.enum(['system', 'user', 'assistant', 'data']),
-    content: z.string().optional(),
-    parts: z.array(z.unknown()).optional(),
+    // Client messages are used only to identify the latest user input. The
+    // actual model history is rebuilt from persisted messages below.
+    role: z.enum(['user', 'assistant', 'data']),
+    content: z.string().max(MAX_MESSAGE_CHARS).optional(),
+    parts: z
+      .array(
+        z
+          .object({
+            type: z.string().max(64),
+            text: z.string().max(MAX_MESSAGE_CHARS).optional(),
+          })
+          .passthrough()
+      )
+      .max(20)
+      .optional(),
   })
   .passthrough();
 
 const bodySchema = z.object({
-  messages: z.array(messageSchema).min(1),
-  document_ids: z.array(z.string().uuid()).optional(),
+  messages: z.array(messageSchema).min(1).max(MAX_CLIENT_MESSAGES),
+  document_ids: z.array(z.string().uuid()).max(50).optional(),
   conversation_id: z.string().uuid().optional(),
+});
+
+const rateLimitResultSchema = z.array(
+  z.object({
+    allowed: z.boolean(),
+    retry_after_seconds: z.number().int().nonnegative(),
+  })
+);
+
+const toolResultSchema = z
+  .object({
+    toolName: z.string(),
+  })
+  .passthrough();
+
+const retrievalToolResultSchema = z.object({
+  chunks: z.array(
+    z.object({
+      similarity: z.number(),
+    })
+  ),
 });
 
 const NO_READY_DOCUMENTS_MESSAGE =
@@ -75,7 +114,49 @@ function getLastUserMessage(messages: z.infer<typeof messageSchema>[]) {
   return messages.findLast((message) => message.role === 'user');
 }
 
+function summarizeToolResults(value: unknown) {
+  const parsed = z.array(toolResultSchema).safeParse(value);
+  if (!parsed.success) {
+    return { tool_count: 0, tool_names: [] as string[] };
+  }
+
+  let retrievedChunkCount = 0;
+  const retrievalScores: number[] = [];
+  for (const tool of parsed.data) {
+    if (tool.toolName !== 'search_documents' || !('result' in tool)) continue;
+    const result = retrievalToolResultSchema.safeParse(tool.result);
+    if (!result.success) continue;
+    retrievedChunkCount += result.data.chunks.length;
+    retrievalScores.push(...result.data.chunks.map((chunk) => chunk.similarity));
+  }
+
+  return {
+    tool_count: parsed.data.length,
+    tool_names: [...new Set(parsed.data.map((tool) => tool.toolName))],
+    retrieved_chunk_count: retrievedChunkCount,
+    average_retrieval_score:
+      retrievalScores.length > 0
+        ? retrievalScores.reduce((total, score) => total + score, 0) / retrievalScores.length
+        : null,
+  };
+}
+
+function estimateChatCost(inputTokens: number | undefined, outputTokens: number | undefined) {
+  return (
+    ((inputTokens ?? 0) * AI_CONFIG.observability.chatInputCostUsdPerMillion +
+      (outputTokens ?? 0) * AI_CONFIG.observability.chatOutputCostUsdPerMillion) /
+    1_000_000
+  );
+}
+
 export async function POST(req: Request) {
+  const startedAt = Date.now();
+  const requestId = crypto.randomUUID();
+  const contentLength = Number(req.headers.get('content-length') ?? '0');
+  if (Number.isFinite(contentLength) && contentLength > MAX_CHAT_REQUEST_BYTES) {
+    return Response.json({ error: 'Body demasiado grande' }, { status: 413 });
+  }
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -110,6 +191,33 @@ export async function POST(req: Request) {
     return Response.json({ error: 'Falta mensaje de usuario' }, { status: 400 });
   }
 
+  const { data: rateLimitData, error: rateLimitError } = await supabase.rpc(
+    'consume_chat_rate_limit',
+    {
+      p_limit: AI_CONFIG.limits.chatRequestsPerMinute,
+      p_window_seconds: 60,
+    }
+  );
+  if (rateLimitError) {
+    console.error('[api/chat] rate limit', rateLimitError);
+    return Response.json({ error: 'Error al comprobar el limite de uso' }, { status: 500 });
+  }
+
+  const rateLimit = rateLimitResultSchema.safeParse(rateLimitData ?? []);
+  if (!rateLimit.success || !rateLimit.data[0]) {
+    console.error('[api/chat] invalid rate limit response', rateLimit.error);
+    return Response.json({ error: 'Error al comprobar el limite de uso' }, { status: 500 });
+  }
+  if (!rateLimit.data[0].allowed) {
+    return Response.json(
+      { error: 'Has alcanzado el limite temporal de mensajes. Intentalo de nuevo en un minuto.' },
+      {
+        status: 429,
+        headers: { 'retry-after': String(rateLimit.data[0].retry_after_seconds) },
+      }
+    );
+  }
+
   const conversation = await getOrCreateConversation(
     supabase,
     user.id,
@@ -134,7 +242,7 @@ export async function POST(req: Request) {
 
   let readyDocumentsQuery = supabase
     .from('documents')
-    .select('id')
+    .select('id, title')
     .eq('status', 'ready');
 
   if (requestedDocumentIds && requestedDocumentIds.length > 0) {
@@ -153,11 +261,6 @@ export async function POST(req: Request) {
     (document) => document.id
   );
 
-  const estimatedTokens = messages.reduce(
-    (total, message) => total + estimateTokens(extractMessageText(message)),
-    0
-  );
-
   if (readyDocumentIds.length === 0) {
     console.log(
       `[ai/chat] user=${user.id} messages=${messages.length} chunks=0 model=none estimated_tokens=0`
@@ -168,21 +271,34 @@ export async function POST(req: Request) {
       text: NO_READY_DOCUMENTS_MESSAGE,
     });
     await touchConversation(supabase, conversationId);
+    await recordUserTrace(supabase, {
+      requestId,
+      userId: user.id,
+      conversationId,
+      stage: 'chat',
+      status: 'ok',
+      latencyMs: Date.now() - startedAt,
+      metadata: { documents_ready: 0, response_kind: 'no_ready_documents' },
+    });
     return createAssistantTextResponse(NO_READY_DOCUMENTS_MESSAGE, conversationId);
   }
 
   const tools = createAgentTools({
     userId: user.id,
     allowedDocumentIds: readyDocumentIds,
+    allowedDocuments: (readyDocuments ?? []) as DocumentRow[],
     supabase: supabase as unknown as AgentToolContext['supabase'],
   });
 
-  const promptMessages = messages
-    .filter((message) => ['system', 'user', 'assistant'].includes(message.role))
-    .map((message) => ({
-      role: message.role as 'system' | 'user' | 'assistant',
-      content: extractMessageText(message),
-    }));
+  const promptHistory = await getConversationPromptMessages(supabase, conversationId);
+  if (promptHistory.error || !promptHistory.messages) {
+    return Response.json({ error: promptHistory.error ?? 'Error al cargar el historial' }, { status: 500 });
+  }
+
+  const estimatedTokens = promptHistory.messages.reduce(
+    (total, message) => total + estimateTokens(message.content),
+    0
+  );
 
   console.log(
     `[ai/chat] user=${user.id} messages=${messages.length} tools=${Object.keys(tools).join(',')} model=${AI_CONFIG.chatModel} estimated_tokens=${estimatedTokens}`
@@ -191,11 +307,11 @@ export async function POST(req: Request) {
   const result = streamText({
     model: openai(AI_CONFIG.chatModel),
     system: SYSTEM_PROMPT_AGENT,
-    messages: convertToCoreMessages(promptMessages),
+    messages: convertToCoreMessages(promptHistory.messages),
     tools,
     maxSteps: AI_CONFIG.agent.maxSteps,
     maxTokens: AI_CONFIG.agent.maxTokensPerResponse,
-    onFinish: async ({ text, toolCalls, toolResults }) => {
+    onFinish: async ({ text, toolCalls, toolResults, usage }) => {
       await persistChatMessage(supabase, {
         conversationId,
         role: 'assistant',
@@ -204,6 +320,23 @@ export async function POST(req: Request) {
         toolResults,
       });
       await touchConversation(supabase, conversationId);
+      const toolSummary = summarizeToolResults(toolResults);
+      await recordUserTrace(supabase, {
+        requestId,
+        userId: user.id,
+        conversationId,
+        stage: 'chat',
+        status: 'ok',
+        latencyMs: Date.now() - startedAt,
+        model: AI_CONFIG.chatModel,
+        inputTokens: usage?.promptTokens,
+        outputTokens: usage?.completionTokens,
+        estimatedCostUsd: estimateChatCost(usage?.promptTokens, usage?.completionTokens),
+        metadata: {
+          documents_ready: readyDocumentIds.length,
+          ...toolSummary,
+        },
+      });
     },
   });
 
@@ -222,4 +355,7 @@ export const __chatTestUtils = {
   NO_READY_DOCUMENTS_MESSAGE,
   estimateTokens,
   extractMessageText,
+  summarizeToolResults,
+  estimateChatCost,
+  MAX_CHAT_REQUEST_BYTES,
 };

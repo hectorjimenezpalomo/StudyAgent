@@ -1,8 +1,9 @@
 import { z } from 'zod';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { Tables, TablesInsert } from '@/lib/supabase/types';
-import { chunkText } from './chunker';
+import { chunkPages, chunkText, type ExtractedPage } from './chunker';
 import { embed } from './embeddings';
+import { AI_CONFIG } from './config';
 
 type DocumentRow = Pick<Tables<'documents'>, 'id' | 'storage_path' | 'user_id'>;
 type ChunkInsert = TablesInsert<'chunks'>;
@@ -39,7 +40,12 @@ export type SupabaseIngestClient = {
 type PdfParseResult = {
   text?: string;
   numpages?: number;
+  pages?: ExtractedPage[];
 };
+
+export type IngestResult =
+  | { ok: true }
+  | { ok: false; error: string };
 
 export type IngestDependencies = {
   supabase: SupabaseIngestClient;
@@ -63,9 +69,63 @@ function serializeEmbedding(embedding: number[]) {
   return `[${embedding.join(',')}]`;
 }
 
+function isPdfPage(value: unknown): value is {
+  getTextContent: (options: {
+    normalizeWhitespace: boolean;
+    disableCombineTextItems: boolean;
+  }) => Promise<unknown>;
+} {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'getTextContent' in value &&
+    typeof value.getTextContent === 'function'
+  );
+}
+
+function parsePageText(value: unknown): string {
+  if (!value || typeof value !== 'object' || !('items' in value) || !Array.isArray(value.items)) {
+    throw new Error('El extractor devolvio una pagina invalida');
+  }
+
+  return value.items
+    .map((item) => {
+      if (item && typeof item === 'object' && 'str' in item && typeof item.str === 'string') {
+        return item.str;
+      }
+      return '';
+    })
+    .join(' ')
+    .trim();
+}
+
 async function loadPdfParse() {
   const pdfParse = (await import('pdf-parse')).default;
-  return async (buffer: Buffer) => pdfParse(buffer) as Promise<PdfParseResult>;
+  return async (buffer: Buffer): Promise<PdfParseResult> => {
+    const pages: ExtractedPage[] = [];
+    const parsed = await pdfParse(buffer, {
+      pagerender: async (pageData) => {
+        if (!isPdfPage(pageData)) {
+          throw new Error('El extractor devolvio una pagina invalida');
+        }
+
+        const text = parsePageText(
+          await pageData.getTextContent({
+            normalizeWhitespace: false,
+            disableCombineTextItems: false,
+          })
+        );
+        pages.push({ pageNumber: pages.length + 1, text });
+        return text;
+      },
+    });
+
+    return {
+      text: parsed.text,
+      numpages: parsed.numpages,
+      pages,
+    };
+  };
 }
 
 async function markDocumentError(
@@ -89,7 +149,7 @@ async function markDocumentError(
 export async function runIngestDocument(
   documentId: string,
   deps: IngestDependencies
-): Promise<void> {
+): Promise<IngestResult> {
   const parsedDocumentId = documentIdSchema.safeParse(documentId);
   if (!parsedDocumentId.success) {
     throw new Error('Id de documento invalido');
@@ -151,7 +211,10 @@ export async function runIngestDocument(
       throw new Error('El PDF no contiene texto extraible');
     }
 
-    const chunks = chunkText(text);
+    const chunks =
+      parsedPdf.pages && parsedPdf.pages.length > 0
+        ? chunkPages(parsedPdf.pages)
+        : chunkText(text);
     if (chunks.length === 0) {
       throw new Error('No se pudieron generar chunks del PDF');
     }
@@ -159,6 +222,9 @@ export async function runIngestDocument(
     const embeddings = await deps.embedTexts(chunks.map((chunk) => chunk.content));
     if (embeddings.length !== chunks.length) {
       throw new Error('OpenAI devolvio un numero inesperado de embeddings');
+    }
+    if (embeddings.some((embedding) => embedding.length !== AI_CONFIG.embeddingDimensions)) {
+      throw new Error('OpenAI devolvio embeddings con una dimension inesperada');
     }
 
     const chunkRows = chunks.map((chunk, index): ChunkInsert => ({
@@ -191,13 +257,15 @@ export async function runIngestDocument(
     if (readyError) {
       throw new Error(`Error al finalizar ingesta: ${readyError.message}`);
     }
+    return { ok: true };
   } catch (error) {
     console.error('[ai/ingest]', error);
     await markDocumentError(supabase, parsedDocumentId.data, error);
+    return { ok: false, error: errorMessage(error) };
   }
 }
 
-export async function ingestDocument(documentId: string): Promise<void> {
+export async function ingestDocument(documentId: string): Promise<IngestResult> {
   const parsePdf = await loadPdfParse();
 
   return runIngestDocument(documentId, {
@@ -211,4 +279,5 @@ export async function ingestDocument(documentId: string): Promise<void> {
 export const __ingestTestUtils = {
   serializeEmbedding,
   errorMessage,
+  parsePageText,
 };

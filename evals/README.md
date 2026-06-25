@@ -11,7 +11,8 @@ romper otros. Este harness mide cada cambio contra un dataset etiquetado.
 Por cada caso del dataset, ejecuta el pipeline RAG core
 (`embed → match_chunks → generateText`) y reporta:
 
-**Retrieval** (comparando chunks recuperados contra `ground_truth_chunk_ids`):
+**Retrieval** (solo para casos con `ground_truth_chunk_ids`, comparando chunks
+recuperados contra esas etiquetas):
 - `recall@5`, `recall@8`: fracción de chunks relevantes encontrados en el top-k.
 - `MRR`: posición inversa del primer chunk relevante. Penaliza tenerlo abajo.
 - `hit_rate@5`, `hit_rate@8`: 1 si al menos un relevante aparece en el top-k.
@@ -90,8 +91,8 @@ empiezan por `//` se ignoran. Schema (zod en `evals/types.ts`):
 - `document_ids` debe corresponder a documentos ingestados (status `ready`) en
   la Supabase apuntada por `.env.local`. El runner deriva el `user_id` desde
   ellos para satisfacer el filtro de RLS de `match_chunks`.
-- `ground_truth_chunk_ids` es opcional. Sin él, las métricas de retrieval
-  quedan en 0 pero la evaluación de generación sigue activa.
+- `ground_truth_chunk_ids` es opcional. Sin él, el caso no entra en los
+  agregados de retrieval; la evaluación de generación sigue activa.
 
 ### Cómo poblar chunk ids relevantes
 
@@ -122,6 +123,9 @@ pregunta y copia sus `id` al campo `ground_truth_chunk_ids` del caso.
 
 ## Trabajo pendiente sobre este harness
 
+- Añadir un corpus público reproducible y publicar un baseline antes de afirmar
+  que hybrid search o reranking mejoran la calidad. No se versionan IDs
+  ficticios porque pertenecen a una instancia concreta de Supabase.
 - Subset rápido (≤5 casos) para iteración interactiva.
 - Workflow semanal en GitHub Actions (Fase D1) que corre el eval y comenta en
   una issue fija con el resumen.

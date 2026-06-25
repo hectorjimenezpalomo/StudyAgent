@@ -58,8 +58,8 @@ export default async function DocumentsPage() {
             Documentos
           </h1>
           <p className="mt-2 text-sm text-slate-600">
-            Sube PDFs para dejarlos preparados para la ingesta de la siguiente
-            fase.
+            Sube PDFs privados. La cola de ingesta los procesa antes de ponerlos
+            a disposición del chat.
           </p>
         </div>
         <UploadButton />
@@ -77,6 +77,7 @@ export default async function DocumentsPage() {
             {documents.map((doc) => (
               <li
                 key={doc.id}
+                id={`document-${doc.id}`}
                 className="grid gap-4 py-4 sm:grid-cols-[1fr_auto] sm:items-center"
               >
                 <div className="min-w-0">

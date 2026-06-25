@@ -105,6 +105,7 @@ async function runCase(supabase: SupabaseClient, caseDef: EvalCase): Promise<Cas
     return {
       case_id: caseDef.id,
       question: caseDef.question,
+      has_ground_truth: caseDef.ground_truth_chunk_ids.length > 0,
       retrieval: {
         recall_at_5: 0,
         recall_at_8: 0,
@@ -136,6 +137,7 @@ async function runCase(supabase: SupabaseClient, caseDef: EvalCase): Promise<Cas
   return {
     case_id: caseDef.id,
     question: caseDef.question,
+    has_ground_truth: caseDef.ground_truth_chunk_ids.length > 0,
     retrieval: {
       recall_at_5: recallAtK(retrievedIds, caseDef.ground_truth_chunk_ids, 5),
       recall_at_8: recallAtK(retrievedIds, caseDef.ground_truth_chunk_ids, 8),
@@ -160,22 +162,22 @@ async function runCase(supabase: SupabaseClient, caseDef: EvalCase): Promise<Cas
 
 function aggregate(cases: CaseResult[]): AggregateMetrics {
   const totals = cases.map((c) => c.latency.total_ms);
-  const withGroundTruth = cases.filter((c) => c.retrieval.retrieved_chunk_ids.length > 0);
+  const successfulCases = cases.filter((c) => !c.error);
+  const labeledCases = successfulCases.filter((c) => c.has_ground_truth);
 
   return {
     n_cases: cases.length,
-    n_with_ground_truth: cases.filter((c) => c.retrieval.recall_at_8 > 0 || c.retrieval.hit_rate_at_8 > 0)
-      .length,
+    n_with_ground_truth: labeledCases.length,
     retrieval: {
-      avg_recall_at_5: average(cases.map((c) => c.retrieval.recall_at_5)),
-      avg_recall_at_8: average(cases.map((c) => c.retrieval.recall_at_8)),
-      avg_mrr: average(cases.map((c) => c.retrieval.mrr)),
-      avg_hit_rate_at_5: average(cases.map((c) => c.retrieval.hit_rate_at_5)),
-      avg_hit_rate_at_8: average(cases.map((c) => c.retrieval.hit_rate_at_8)),
+      avg_recall_at_5: average(labeledCases.map((c) => c.retrieval.recall_at_5)),
+      avg_recall_at_8: average(labeledCases.map((c) => c.retrieval.recall_at_8)),
+      avg_mrr: average(labeledCases.map((c) => c.retrieval.mrr)),
+      avg_hit_rate_at_5: average(labeledCases.map((c) => c.retrieval.hit_rate_at_5)),
+      avg_hit_rate_at_8: average(labeledCases.map((c) => c.retrieval.hit_rate_at_8)),
     },
     generation: {
-      avg_faithfulness: average(withGroundTruth.map((c) => c.generation.faithfulness)),
-      avg_answer_relevancy: average(withGroundTruth.map((c) => c.generation.answer_relevancy)),
+      avg_faithfulness: average(successfulCases.map((c) => c.generation.faithfulness)),
+      avg_answer_relevancy: average(successfulCases.map((c) => c.generation.answer_relevancy)),
     },
     latency: {
       avg_total_ms: average(totals),
@@ -247,6 +249,7 @@ async function main(): Promise<void> {
       results.push({
         case_id: caseDef.id,
         question: caseDef.question,
+        has_ground_truth: caseDef.ground_truth_chunk_ids.length > 0,
         retrieval: {
           recall_at_5: 0,
           recall_at_8: 0,

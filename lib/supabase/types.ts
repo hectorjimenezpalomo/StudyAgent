@@ -38,6 +38,7 @@ export type Database = {
         Row: {
           chunk_index: number
           content: string
+          content_tsv: unknown
           created_at: string
           document_id: string
           embedding: string
@@ -48,6 +49,7 @@ export type Database = {
         Insert: {
           chunk_index: number
           content: string
+          content_tsv?: never
           created_at?: string
           document_id: string
           embedding: string
@@ -58,6 +60,7 @@ export type Database = {
         Update: {
           chunk_index?: number
           content?: string
+          content_tsv?: never
           created_at?: string
           document_id?: string
           embedding?: string
@@ -114,6 +117,35 @@ export type Database = {
           },
         ]
       }
+      chat_rate_limits: {
+        Row: {
+          request_count: number
+          updated_at: string
+          user_id: string
+          window_started_at: string
+        }
+        Insert: {
+          request_count?: number
+          updated_at?: string
+          user_id: string
+          window_started_at?: string
+        }
+        Update: {
+          request_count?: number
+          updated_at?: string
+          user_id?: string
+          window_started_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_rate_limits_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       documents: {
         Row: {
           created_at: string
@@ -161,6 +193,66 @@ export type Database = {
           },
         ]
       }
+      ingestion_jobs: {
+        Row: {
+          attempts: number
+          created_at: string
+          document_id: string
+          id: string
+          last_error: string | null
+          locked_at: string | null
+          locked_by: string | null
+          max_attempts: number
+          next_attempt_at: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          attempts?: number
+          created_at?: string
+          document_id: string
+          id?: string
+          last_error?: string | null
+          locked_at?: string | null
+          locked_by?: string | null
+          max_attempts?: number
+          next_attempt_at?: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          attempts?: number
+          created_at?: string
+          document_id?: string
+          id?: string
+          last_error?: string | null
+          locked_at?: string | null
+          locked_by?: string | null
+          max_attempts?: number
+          next_attempt_at?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ingestion_jobs_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: true
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ingestion_jobs_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       messages: {
         Row: {
           content: Json
@@ -196,6 +288,117 @@ export type Database = {
           },
         ]
       }
+      message_feedback: {
+        Row: {
+          created_at: string
+          id: string
+          message_id: string
+          note: string | null
+          rating: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          message_id: string
+          note?: string | null
+          rating: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          message_id?: string
+          note?: string | null
+          rating?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_feedback_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "message_feedback_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trace_events: {
+        Row: {
+          conversation_id: string | null
+          created_at: string
+          error_code: string | null
+          estimated_cost_usd: number | null
+          id: string
+          input_tokens: number | null
+          latency_ms: number | null
+          metadata: Json
+          model: string | null
+          output_tokens: number | null
+          request_id: string
+          stage: string
+          status: string
+          user_id: string | null
+        }
+        Insert: {
+          conversation_id?: string | null
+          created_at?: string
+          error_code?: string | null
+          estimated_cost_usd?: number | null
+          id?: string
+          input_tokens?: number | null
+          latency_ms?: number | null
+          metadata?: Json
+          model?: string | null
+          output_tokens?: number | null
+          request_id: string
+          stage: string
+          status: string
+          user_id?: string | null
+        }
+        Update: {
+          conversation_id?: string | null
+          created_at?: string
+          error_code?: string | null
+          estimated_cost_usd?: number | null
+          id?: string
+          input_tokens?: number | null
+          latency_ms?: number | null
+          metadata?: Json
+          model?: string | null
+          output_tokens?: number | null
+          request_id?: string
+          stage?: string
+          status?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trace_events_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trace_events_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string
@@ -222,6 +425,34 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      claim_ingestion_job: {
+        Args: {
+          p_worker_id: string
+        }
+        Returns: {
+          attempts: number
+          document_id: string
+          id: string
+          max_attempts: number
+          user_id: string
+        }[]
+      }
+      complete_ingestion_job: {
+        Args: {
+          p_job_id: string
+        }
+        Returns: undefined
+      }
+      consume_chat_rate_limit: {
+        Args: {
+          p_limit: number
+          p_window_seconds?: number
+        }
+        Returns: {
+          allowed: boolean
+          retry_after_seconds: number
+        }[]
+      }
       match_chunks: {
         Args: {
           match_count?: number
@@ -235,8 +466,39 @@ export type Database = {
           content: string
           document_id: string
           id: string
-          page_number: number
+          page_number: number | null
           similarity: number
+        }[]
+      }
+      match_chunks_hybrid: {
+        Args: {
+          candidate_multiplier?: number
+          match_count?: number
+          p_document_ids?: string[]
+          p_user_id?: string
+          query_embedding: string
+          query_text: string
+          rrf_k?: number
+        }
+        Returns: {
+          chunk_index: number
+          content: string
+          document_id: string
+          id: string
+          page_number: number | null
+          rrf_score: number
+          similarity: number
+        }[]
+      }
+      retry_ingestion_job: {
+        Args: {
+          p_error: string
+          p_job_id: string
+          p_retry_delay_seconds?: number
+        }
+        Returns: {
+          attempts: number
+          retry_scheduled: boolean
         }[]
       }
     }
@@ -374,4 +636,3 @@ export const Constants = {
     Enums: {},
   },
 } as const
-

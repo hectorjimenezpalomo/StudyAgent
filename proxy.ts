@@ -1,9 +1,6 @@
 /**
- * Middleware que refresca las cookies de Supabase auth en cada petición
- * y protege las rutas autenticadas redirigiendo a /login si no hay sesión.
- *
- * Codex: completar con la lógica de redirección. El cliente de Supabase
- * en middleware se crea con un patrón ligeramente distinto al de server.ts.
+ * Refresca cookies de Supabase y protege las rutas autenticadas. Next.js 16
+ * sustituye la convención middleware.ts por proxy.ts.
  */
 
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
@@ -18,7 +15,7 @@ type CookieToSet = {
   options: CookieOptions;
 };
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -30,9 +27,7 @@ export async function middleware(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet: CookieToSet[]) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value)
-          );
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
           response = NextResponse.next({ request });
           cookiesToSet.forEach(({ name, value, options }) =>
             response.cookies.set(name, value, options)
@@ -42,11 +37,13 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   const pathname = request.nextUrl.pathname;
 
-  const isProtected = PROTECTED_PREFIXES.some(p => pathname.startsWith(p));
-  const isAuthRoute = AUTH_ROUTES.some(p => pathname.startsWith(p));
+  const isProtected = PROTECTED_PREFIXES.some((path) => pathname.startsWith(path));
+  const isAuthRoute = AUTH_ROUTES.some((path) => pathname.startsWith(path));
 
   if (isProtected && !user) {
     const url = request.nextUrl.clone();

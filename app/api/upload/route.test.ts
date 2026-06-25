@@ -1,11 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ingestDocument } from '@/lib/ai/ingest';
 import { createClient } from '@/lib/supabase/server';
 import { POST, __uploadTestUtils } from './route';
-
-vi.mock('@/lib/ai/ingest', () => ({
-  ingestDocument: vi.fn(async () => undefined),
-}));
 
 vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn(),
@@ -84,17 +79,17 @@ describe('POST /api/upload', () => {
 
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: 'Solo se aceptan PDFs validos' });
-    expect(ingestDocument).not.toHaveBeenCalled();
   });
 
-  it('acepta PDF con firma valida y dispara ingesta', async () => {
+  it('acepta PDF con firma valida y encola una ingesta durable', async () => {
     const { insert, upload } = mockSupabase();
 
     const response = await POST(uploadRequest(pdfFile()));
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ document_id: expect.any(String) });
-    expect(insert).toHaveBeenCalledWith(
+    expect(insert).toHaveBeenNthCalledWith(
+      1,
       expect.objectContaining({
         user_id: USER_ID,
         title: 'demo.pdf',
@@ -106,6 +101,12 @@ describe('POST /api/upload', () => {
       expect.any(File),
       expect.objectContaining({ contentType: 'application/pdf' })
     );
-    expect(ingestDocument).toHaveBeenCalledWith(expect.any(String));
+    expect(insert).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        user_id: USER_ID,
+        document_id: expect.any(String),
+      })
+    );
   });
 });
