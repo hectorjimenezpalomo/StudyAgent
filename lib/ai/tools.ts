@@ -137,30 +137,6 @@ const LEXICAL_STOP_WORDS = new Set([
   'y',
 ]);
 
-const LEXICAL_ALIASES: Record<string, readonly string[]> = {
-  ancho: ['bandwidth'],
-  analisis: ['analysis'],
-  arquitectura: ['architecture'],
-  banda: ['bandwidth'],
-  computadores: ['computer', 'computers'],
-  computador: ['computer'],
-  coste: ['cost'],
-  costo: ['cost'],
-  cuantitativo: ['quantitative'],
-  diseno: ['design'],
-  energia: ['energy'],
-  latencia: ['latency'],
-  memoria: ['memory'],
-  ordenadores: ['computer', 'computers'],
-  ordenador: ['computer'],
-  paralelismo: ['parallelism'],
-  potencia: ['power'],
-  principios: ['principles'],
-  procesador: ['processor'],
-  procesadores: ['processors'],
-  rendimiento: ['performance'],
-};
-
 function filterDocumentIds(
   requestedDocumentIds: string[] | undefined,
   allowedDocumentIds: string[]
@@ -223,9 +199,6 @@ function buildLexicalTerms(query: string) {
 
   for (const token of tokens) {
     terms.add(token);
-    for (const alias of LEXICAL_ALIASES[token] ?? []) {
-      terms.add(alias);
-    }
   }
 
   return [...terms];

@@ -218,7 +218,7 @@ describe('agent tools', () => {
     });
   });
 
-  it('search_documents usa fallback lexico bilingue si vector no recupera chunks', async () => {
+  it('search_documents usa fallback lexico generico si vector no recupera chunks', async () => {
     const { context, rpc, documentEq } = createContext({
       chunks: [],
       documentChunks: [
@@ -233,11 +233,11 @@ describe('agent tools', () => {
     });
 
     const result = await __toolsTestUtils.searchDocuments(context, {
-      query: 'que sabes sobre diseño',
+      query: 'que sabes sobre computer design',
       top_k: 3,
     });
 
-    expect(embedQuery).toHaveBeenCalledWith('que sabes sobre diseño');
+    expect(embedQuery).toHaveBeenCalledWith('que sabes sobre computer design');
     expect(rpc).toHaveBeenCalledWith('match_chunks', {
       query_embedding: '[0.1,0.2,0.3]',
       match_threshold: 0.5,

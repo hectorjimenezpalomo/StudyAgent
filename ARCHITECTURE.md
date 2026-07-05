@@ -49,7 +49,7 @@ Definidas en `lib/ai/tools.ts` y compuestas con `createAgentTools(context)`.
 
 | tool | parámetros | qué hace |
 |---|---|---|
-| `search_documents` | `query`, `document_ids?`, `top_k?` | Si la query menciona una página explícita (`pagina 1`, `page 1`), carga chunks por `page_number`; si no, embedea la query, llama `match_chunks` y devuelve chunks ordenados con `{document_title, page_number, chunk_id}` como fuentes. Si el retrieval vectorial queda vacío, usa un fallback léxico acotado a documentos permitidos con alias básicos español→inglés (`diseño→design`, `análisis→analysis`, etc.) |
+| `search_documents` | `query`, `document_ids?`, `top_k?` | Si la query menciona una página explícita (`pagina 1`, `page 1`), carga chunks por `page_number`; si no, embedea la query, llama `match_chunks` y devuelve chunks ordenados con `{document_title, page_number, chunk_id}` como fuentes. Si el retrieval vectorial queda vacío, usa un fallback léxico genérico (tokens de la query sin stopwords, sin diccionario de dominio) acotado a los documentos permitidos |
 | `generate_quiz` | `topic`, `num_questions`, `document_ids?` | RAG + `generateObject` con schema de `QuizQuestion[]` y fuentes recuperadas |
 | `generate_summary` | `document_id`, `length` | Carga todos los chunks del doc, resumen con `generateText` y fuente del documento |
 | `generate_flashcards` | `topic`, `num_cards`, `document_ids?` | RAG + `generateObject` con schema de `Flashcard[]` y fuentes recuperadas |
