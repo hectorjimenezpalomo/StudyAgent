@@ -43,14 +43,15 @@ Opcionales heredadas de la app: `AI_PROVIDER`, `GOOGLE_GENERATIVE_AI_API_KEY`,
 npm run mcp
 ```
 
-Equivale a `node --env-file=.env.local mcp-server/index.ts`. Añade
+Equivale a `node --import tsx --env-file=.env.local mcp-server/index.ts` (el
+loader `tsx` resuelve TypeScript y los imports sin extensión). Añade
 `MCP_USER_ID=<tu-uuid>` a `.env.local` (el uuid de `auth.users` cuyo material
 quieres servir).
 
 ## Probarlo con el inspector
 
 ```powershell
-npx @modelcontextprotocol/inspector node --env-file=.env.local mcp-server/index.ts
+npx @modelcontextprotocol/inspector node --import tsx --env-file=.env.local mcp-server/index.ts
 ```
 
 En el inspector: **List Tools** debe mostrar las 5; llama `search_documents` con
@@ -67,7 +68,8 @@ pasa las env directamente (el proceso no lee `.env.local` si lo lanza el cliente
     "studyagent": {
       "command": "node",
       "args": [
-        "--no-warnings=ModuleTypelessPackageJsonWarning",
+        "--import",
+        "tsx",
         "C:\\Users\\<tu-usuario>\\...\\studyagent\\mcp-server\\index.ts"
       ],
       "env": {
