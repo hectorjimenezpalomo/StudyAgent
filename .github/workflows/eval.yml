@@ -1,0 +1,89 @@
+name: RAG eval
+
+# Corre el harness de evals (npm run eval) contra la Supabase real. Es manual
+# (workflow_dispatch) porque consume tokens de OpenAI y depende de datos privados
+# ingestados en tu instancia.
+#
+# Secrets que debes crear en GitHub (Settings → Secrets and variables → Actions):
+#   OPENAI_API_KEY
+#   NEXT_PUBLIC_SUPABASE_URL
+#   SUPABASE_SERVICE_ROLE_KEY
+#   GOOGLE_GENERATIVE_AI_API_KEY   (opcional; solo si eliges provider=google)
+#   COHERE_API_KEY                 (opcional; solo si eliges rerank=cohere)
+
+on:
+  workflow_dispatch:
+    inputs:
+      retrieval_mode:
+        description: Modo de retrieval
+        type: choice
+        options: [vector, hybrid]
+        default: vector
+      rerank_provider:
+        description: Reranker
+        type: choice
+        options: [none, llm, cohere]
+        default: none
+      provider:
+        description: Proveedor de chat
+        type: choice
+        options: [openai, google]
+        default: openai
+  # Descomenta para correrlo semanalmente (lunes 06:00 UTC). Requiere que los
+  # secrets estén configurados; usará los defaults de los inputs (vector/none/openai).
+  # schedule:
+  #   - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
+      COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
+      AI_PROVIDER: ${{ inputs.provider || 'openai' }}
+      RAG_RETRIEVAL_MODE: ${{ inputs.retrieval_mode || 'vector' }}
+      RERANK_PROVIDER: ${{ inputs.rerank_provider || 'none' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+
+      # npm run eval usa --env-file=.env.local; lo materializamos desde el env
+      # (que viene de secrets) para no cambiar el script.
+      - name: Write .env.local from secrets
+        run: |
+          {
+            echo "OPENAI_API_KEY=${OPENAI_API_KEY}"
+            echo "NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}"
+            echo "SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}"
+            echo "GOOGLE_GENERATIVE_AI_API_KEY=${GOOGLE_GENERATIVE_AI_API_KEY}"
+            echo "COHERE_API_KEY=${COHERE_API_KEY}"
+            echo "AI_PROVIDER=${AI_PROVIDER}"
+            echo "RAG_RETRIEVAL_MODE=${RAG_RETRIEVAL_MODE}"
+            echo "RERANK_PROVIDER=${RERANK_PROVIDER}"
+          } > .env.local
+
+      - name: Run eval
+        run: npm run eval
+
+      - name: Publish aggregate to job summary
+        if: always()
+        run: node .github/scripts/eval-summary.mjs >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload results JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results
+          path: evals/results/*.json
+          if-no-files-found: warn

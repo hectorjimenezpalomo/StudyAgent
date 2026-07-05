@@ -21,8 +21,18 @@ import { runPipeline } from './pipeline';
 import { evalCaseSchema, type AggregateMetrics, type CaseResult, type EvalCase, type RunReport } from './types';
 
 const EVALS_DIR = path.resolve(import.meta.dirname);
-const DATASET_PATH = path.join(EVALS_DIR, 'dataset.jsonl');
+const DEFAULT_DATASET_PATH = path.join(EVALS_DIR, 'dataset.jsonl');
 const RESULTS_DIR = path.join(EVALS_DIR, 'results');
+
+/**
+ * Ruta del dataset: primer argumento posicional (`npm run eval -- <ruta>`) o el
+ * default `evals/dataset.jsonl`. Permite correr datasets sintéticos sin tocar
+ * código.
+ */
+function resolveDatasetPath(): string {
+  const arg = process.argv.slice(2).find((value) => !value.startsWith('-'));
+  return arg ? path.resolve(arg) : DEFAULT_DATASET_PATH;
+}
 
 interface RequiredEnv {
   supabaseUrl: string;
@@ -53,12 +63,12 @@ function loadEnv(): RequiredEnv {
   };
 }
 
-async function loadDataset(): Promise<EvalCase[]> {
+async function loadDataset(datasetPath: string): Promise<EvalCase[]> {
   let raw: string;
   try {
-    raw = await readFile(DATASET_PATH, 'utf8');
+    raw = await readFile(datasetPath, 'utf8');
   } catch {
-    throw new Error(`[evals/runner] No se encuentra ${DATASET_PATH}.`);
+    throw new Error(`[evals/runner] No se encuentra ${datasetPath}.`);
   }
 
   const lines = raw
@@ -190,6 +200,7 @@ function printSummary(report: RunReport): void {
   console.log('');
   console.log('=== StudyAgent Eval Run ===');
   console.log(`Timestamp:        ${report.timestamp}`);
+  console.log(`Provider:         ${report.config.provider}`);
   console.log(`Chat model:       ${report.config.chat_model}`);
   console.log(`Embedding model:  ${report.config.embedding_model} (${report.config.embedding_dimensions}d)`);
   console.log(`Retrieval mode:   ${report.config.retrieval_mode}`);
@@ -229,11 +240,13 @@ async function main(): Promise<void> {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const cases = await loadDataset();
+  const datasetPath = resolveDatasetPath();
+  const cases = await loadDataset(datasetPath);
   if (cases.length === 0) {
-    console.log('[evals/runner] dataset.jsonl está vacío. Añade casos para correr el eval.');
+    console.log('[evals/runner] dataset vacío. Añade casos para correr el eval.');
     return;
   }
+  console.log(`[evals/runner] Dataset: ${path.relative(process.cwd(), datasetPath)}`);
 
   console.log(`[evals/runner] Ejecutando ${cases.length} caso(s)...`);
   const results: CaseResult[] = [];
@@ -268,20 +281,23 @@ async function main(): Promise<void> {
   const report: RunReport = {
     timestamp: new Date().toISOString(),
     config: {
-      chat_model: AI_CONFIG.chatModel,
+      provider: AI_CONFIG.provider,
+      chat_model:
+        AI_CONFIG.provider === 'google' ? AI_CONFIG.googleChatModel : AI_CONFIG.chatModel,
       embedding_model: AI_CONFIG.embeddingModel,
       embedding_dimensions: AI_CONFIG.embeddingDimensions,
       match_count: AI_CONFIG.rag.matchCount,
       match_threshold: AI_CONFIG.rag.matchThreshold,
       retrieval_mode: AI_CONFIG.rag.retrievalMode,
       rerank_provider: AI_CONFIG.rag.rerankProvider,
+      dataset: path.relative(process.cwd(), datasetPath),
     },
     cases: results,
     aggregate: aggregate(results),
   };
 
   await mkdir(RESULTS_DIR, { recursive: true });
-  const fileName = `${report.timestamp.replace(/[:.]/g, '-')}_${report.config.retrieval_mode}_${report.config.rerank_provider}.json`;
+  const fileName = `${report.timestamp.replace(/[:.]/g, '-')}_${report.config.retrieval_mode}_${report.config.rerank_provider}_${report.config.provider}.json`;
   const outputPath = path.join(RESULTS_DIR, fileName);
   await writeFile(outputPath, JSON.stringify(report, null, 2), 'utf8');
 

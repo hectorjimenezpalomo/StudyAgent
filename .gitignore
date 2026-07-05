@@ -15,3 +15,9 @@ test-results
 .vercel
 *.tsbuildinfo
 evals/results/*.json
+
+# Python evals (evals-py). uv.lock SÍ se commitea (reproducibilidad).
+evals-py/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/

@@ -6,10 +6,9 @@
  * varianza y bias. Reportar varianza entre runs en futuros experimentos.
  */
 
-import { openai } from '@ai-sdk/openai';
 import { generateObject } from 'ai';
 import { z } from 'zod';
-import { AI_CONFIG } from '../lib/ai/config';
+import { getChatModel } from '../lib/ai/provider';
 
 const judgmentSchema = z.object({
   score: z
@@ -44,7 +43,7 @@ export async function judgeFaithfulness(
   }
 
   const { object } = await generateObject({
-    model: openai(AI_CONFIG.chatModel),
+    model: getChatModel(),
     schema: judgmentSchema,
     prompt: `Evalúa si la RESPUESTA está soportada por el CONTEXTO. Devuelve un score entre 0 y 1:
 
@@ -79,7 +78,7 @@ export async function judgeAnswerRelevancy(
   }
 
   const { object } = await generateObject({
-    model: openai(AI_CONFIG.chatModel),
+    model: getChatModel(),
     schema: judgmentSchema,
     prompt: `Evalúa si la RESPUESTA aborda directamente la PREGUNTA del usuario. Devuelve un score entre 0 y 1:
 

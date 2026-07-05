@@ -8,6 +8,11 @@ function parseRetrievalMode(value: string | undefined): 'vector' | 'hybrid' {
   return 'vector';
 }
 
+function parseProvider(value: string | undefined): AiProvider {
+  if (value === 'google' || value === 'openai') return value;
+  return 'openai';
+}
+
 function parseRerankProvider(value: string | undefined): RerankProvider {
   if (value === 'llm' || value === 'cohere' || value === 'none') return value;
   return 'none';
@@ -24,7 +29,15 @@ function parseNonNegativeNumber(value: string | undefined, fallback: number) {
 }
 
 export const AI_CONFIG = {
+  // Proveedor de chat/generación activo. 'openai' (default) o 'google' (Gemini
+  // vía Google AI Studio). Los embeddings NO dependen de esto: siguen en OpenAI
+  // (ver AGENTS.md regla 6 y docs/adr/0001). La factoría lib/ai/provider.ts es
+  // el único sitio que conoce el SDK del proveedor.
+  provider: parseProvider(process.env.AI_PROVIDER),
   chatModel: process.env.OPENAI_CHAT_MODEL ?? 'gpt-4o-mini',
+  // Modelo de chat cuando provider='google'. Gemini 2.0 Flash es el default:
+  // rápido y con free tier generoso en AI Studio.
+  googleChatModel: process.env.GOOGLE_CHAT_MODEL ?? 'gemini-2.0-flash',
   embeddingModel: process.env.OPENAI_EMBEDDING_MODEL ?? 'text-embedding-3-small',
   embeddingDimensions: 1536, // text-embedding-3-small produce vectores de 1536
 
@@ -51,8 +64,10 @@ export const AI_CONFIG = {
     // Cuántos candidatos pedir al retrieval antes de rerankear. Con topK=8 y
     // multiplier=3 → fetch 24 → rerank → top 8.
     rerankCandidatePoolMultiplier: 3,
-    // Modelo usado por el reranker LLM. Default = chatModel (gpt-4o-mini).
-    rerankLlmModel: process.env.RERANK_LLM_MODEL ?? 'gpt-4o-mini',
+    // Modelo usado por el reranker LLM. Si no se define RERANK_LLM_MODEL, el
+    // reranker usa el modelo default del proveedor activo (getChatModel(undefined)),
+    // para que AI_PROVIDER=google no intente cargar un modelo OpenAI.
+    rerankLlmModel: process.env.RERANK_LLM_MODEL,
   },
 
   agent: {
@@ -84,5 +99,6 @@ export const AI_CONFIG = {
   },
 } as const;
 
+export type AiProvider = 'openai' | 'google';
 export type RetrievalMode = 'vector' | 'hybrid';
 export type RerankProvider = 'none' | 'llm' | 'cohere';

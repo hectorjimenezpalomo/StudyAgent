@@ -1,4 +1,3 @@
-import { openai } from '@ai-sdk/openai';
 import { generateObject, generateText, tool } from 'ai';
 import { z } from 'zod';
 import {
@@ -8,6 +7,7 @@ import {
   buildSummaryPrompt,
 } from './prompts';
 import { AI_CONFIG } from './config';
+import { getChatModel } from './provider';
 import { retrieve, type RetrievalSupabase } from './retrieval';
 import type { ChunkResult, Flashcard, QuizQuestion } from '@/types';
 import type { Tables } from '@/lib/supabase/types';
@@ -479,7 +479,7 @@ export function createAgentTools(context: AgentToolContext) {
       }
 
       const { object } = await generateObject({
-        model: openai(AI_CONFIG.chatModel),
+        model: getChatModel(),
         schema: z.object({
           questions: z.array(quizQuestionSchema).max(num_questions),
         }),
@@ -503,7 +503,7 @@ export function createAgentTools(context: AgentToolContext) {
       }
 
       const { text: summary } = await generateText({
-        model: openai(AI_CONFIG.chatModel),
+        model: getChatModel(),
         prompt: buildSummaryPrompt(text, length),
         maxTokens: AI_CONFIG.agent.maxTokensPerResponse,
       });
@@ -535,7 +535,7 @@ export function createAgentTools(context: AgentToolContext) {
       }
 
       const { object } = await generateObject({
-        model: openai(AI_CONFIG.chatModel),
+        model: getChatModel(),
         schema: z.object({
           cards: z.array(flashcardSchema).max(num_cards),
         }),
@@ -569,7 +569,7 @@ export function createAgentTools(context: AgentToolContext) {
       }
 
       const { text } = await generateText({
-        model: openai(AI_CONFIG.chatModel),
+        model: getChatModel(),
         prompt: buildExplainPrompt(concept, level, chunksToContext(context, chunks)),
         maxTokens: AI_CONFIG.agent.maxTokensPerResponse,
       });

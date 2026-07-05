@@ -72,6 +72,7 @@ export interface AggregateMetrics {
 export interface RunReport {
   timestamp: string;
   config: {
+    provider: 'openai' | 'google';
     chat_model: string;
     embedding_model: string;
     embedding_dimensions: number;
@@ -79,6 +80,8 @@ export interface RunReport {
     match_threshold: number;
     retrieval_mode: 'vector' | 'hybrid';
     rerank_provider: 'none' | 'llm' | 'cohere';
+    // Ruta del dataset usado (útil para distinguir runs con dataset sintético).
+    dataset?: string;
   };
   cases: CaseResult[];
   aggregate: AggregateMetrics;

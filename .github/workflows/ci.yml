@@ -24,3 +24,18 @@ jobs:
       - run: npm run typecheck
       - run: npm run test
       - run: npm run build
+
+  python-evals:
+    # Paridad del harness Python: instala evals-py y corre sus tests de métricas
+    # (no requieren red ni secrets, igual que el job verify).
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Sync deps
+        working-directory: evals-py
+        run: uv sync
+      - name: Run pytest
+        working-directory: evals-py
+        run: uv run pytest

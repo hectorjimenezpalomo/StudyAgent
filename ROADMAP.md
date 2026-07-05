@@ -6,6 +6,40 @@ Fases 1-5 completas. Auth, upload, ingesta con embeddings, chat con RAG, agente 
 
 Siguiente bloque de trabajo: convertir el proyecto en un caso de estudio de **AI applied engineering** con evaluación reproducible y mejoras avanzadas de recuperación.
 
+El trabajo restante se organiza en tres niveles por ratio señal/esfuerzo para la candidatura a Intern AI Engineer (workflows agénticos + RAG, Python, best practices de test/deploy/monitoring de apps GenAI; nice-to-have: Vertex/Gemini, MCP, LangChain/LangGraph/ADK). Las decisiones de arquitectura relevantes están en `docs/adr/`.
+
+---
+
+## Nivel 1 — Candidatura (en curso)
+
+Las 5 mejoras de máximo ratio señal/esfuerzo. Detalle histórico de las capas RAG en "Fase A" más abajo.
+
+1. **Proveedor de chat conmutable OpenAI ↔ Gemini** (`AI_PROVIDER=openai|google`). Gemini vía Google AI Studio (`@ai-sdk/google`, sin cuenta GCP). Factoría `lib/ai/provider.ts` que aísla la futura migración a Vertex. Permite publicar una matriz `provider × retrieval × reranker` con el harness existente. Ver `docs/adr/0001-proveedor-chat-multiproveedor.md`.
+2. **Servidor MCP** sobre las 5 tools del agente (stdio, consumible desde Claude Desktop/Cursor). Ver `docs/adr/0003-servidor-mcp.md`.
+3. **Harness de evals v2 en Python con Ragas** (`evals-py/`): mismo pipeline, mismo dataset, mismo formato de salida, más métricas Ragas. Base del Nivel 2. Ver `docs/adr/0002-evals-en-python-con-ragas.md`.
+4. **Generador de dataset sintético** (`evals-py/evals_py/synthesize.py`): de ~10 casos manuales a 100+ generados por LLM, con el chunk origen como ground truth.
+5. **CI ampliada + eval de regresión + README como landing** del portfolio.
+
+## Nivel 2 — Aprendizaje profundo (pendiente)
+
+- **(a) Agente comparativo en LangGraph (Python) + FastAPI en Cloud Run + Vertex AI**, evaluado con el harness Python: "mismo RAG, dos runtimes, misma métrica". Apéndice comparando conceptos con **ADK** (Agent Development Kit).
+- **(b) Observabilidad estándar**: `experimental_telemetry` del AI SDK → OpenTelemetry → Langfuse, manteniendo `trace_events` como contraste. **Absorbe B1** (tracing end-to-end): la tabla `traces` casera queda como baseline frente a la instrumentación OTel estándar.
+- **(c) A4 query rewriting / HyDE** tras flag `QUERY_TRANSFORM=none|rewrite|hyde`, siguiendo el patrón de `RAG_RETRIEVAL_MODE` / `RERANK_PROVIDER`.
+- **(d) B3 elevado**: heurística anti-injection + `evals/adversarial.jsonl` con PDFs hostiles sintéticos, midiendo attack success rate antes/después.
+
+## Nivel 3 — Opcional
+
+- **C2 streaming de estado del agente** (`thinking… → searching… → found N chunks → writing`). Hacer justo antes de grabar el GIF de demo.
+- **B2 cache semántica** de respuestas.
+- **C1 en versión mínima**: cita clicable que abre el PDF en la página citada (el visor con highlight es esfuerzo L, queda fuera).
+- **C3 multimodal** (vision para capturas de pizarra).
+- **Resumen jerárquico** para documentos largos (subir a Nivel 2 si la demo usa PDFs grandes).
+- **Descartados por ahora** (sin señal para el puesto): export real a Anki (`.apkg`) y compartir documentos entre usuarios.
+
+---
+
+## Historia detallada (capas ya implementadas)
+
 ## Fiabilidad — hecho en código, pendiente de validar en despliegue
 
 - Cola de ingesta durable (`ingestion_jobs`) con claim atómico, retry y endpoint cron protegido.

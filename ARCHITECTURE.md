@@ -55,13 +55,25 @@ Definidas en `lib/ai/tools.ts` y compuestas con `createAgentTools(context)`.
 | `generate_flashcards` | `topic`, `num_cards`, `document_ids?` | RAG + `generateObject` con schema de `Flashcard[]` y fuentes recuperadas |
 | `explain_concept` | `concept`, `level`, `document_ids?` | RAG + `generateText` con prompt ajustado al nivel y fuentes recuperadas |
 
+## Servidor MCP
+
+`mcp-server/` expone las 5 tools del agente como servidor MCP stdio (reutiliza
+`createAgentTools`). `mcp-server/context.ts` valida el entorno (`loadMcpConfig`) y
+construye el `AgentToolContext` para un `MCP_USER_ID` fijo (`buildAgentToolContext`),
+cargando sus documentos `ready` vía service-role. `mcp-server/index.ts` registra
+cada tool con su mismo schema zod. Script `npm run mcp`. Detalles y seguridad
+(salta RLS, nunca exponer a red) en `docs/mcp.md` y `docs/adr/0003`.
+
 ## Variables de entorno
 
 Server (secretas):
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `OPENAI_API_KEY`
+- `AI_PROVIDER` (default `openai`, valores: `openai` | `google`). Conmuta el proveedor de chat/generación en todo el sistema vía la factoría `lib/ai/provider.ts::getChatModel()`. Los embeddings NO dependen de esto (siempre OpenAI). Ver `docs/adr/0001`
+- `OPENAI_API_KEY` (obligatoria siempre: los embeddings usan OpenAI aunque `AI_PROVIDER=google`)
 - `OPENAI_CHAT_MODEL` (default `gpt-4o-mini`)
 - `OPENAI_EMBEDDING_MODEL` (default `text-embedding-3-small`)
+- `GOOGLE_GENERATIVE_AI_API_KEY` (requerida si `AI_PROVIDER=google`; API key gratuita en https://aistudio.google.com/apikey)
+- `GOOGLE_CHAT_MODEL` (default `gemini-2.0-flash`; modelo usado cuando `AI_PROVIDER=google`)
 - `MAX_UPLOAD_BYTES` (default `26214400`)
 - `CHAT_REQUESTS_PER_MINUTE` (default `20`)
 - `CHAT_INPUT_COST_USD_PER_MILLION` y `CHAT_OUTPUT_COST_USD_PER_MILLION` (default `0`; tarifa configurada para trazas)
@@ -85,7 +97,8 @@ Bucket `documents`, privado, límite 25 MB, mime permitido `application/pdf`. Pa
 ## Configuración central
 
 `lib/ai/config.ts` (AI_CONFIG):
-- `chatModel`, `embeddingModel`, `embeddingDimensions: 1536`
+- `provider` ('openai' por defecto, override via `AI_PROVIDER`), `chatModel`, `googleChatModel` (default `gemini-2.0-flash`), `embeddingModel`, `embeddingDimensions: 1536`
+- `lib/ai/provider.ts::getChatModel(modelId?)`: factoría del modelo de chat según `provider`. ÚNICO punto que importa el SDK de proveedor (`@ai-sdk/openai` / `@ai-sdk/google`); migrar a Vertex se hace solo aquí
 - `rag`: `chunkSizeTokens=700`, `chunkOverlapTokens=100`, `matchThreshold=0.5`, `matchCount=8`, `retrievalMode` ('vector' por defecto, override via `RAG_RETRIEVAL_MODE`), `hybridRRFConstant=60`, `hybridCandidateMultiplier=4`, `rerankProvider` ('none' por defecto, override via `RERANK_PROVIDER`), `rerankCandidatePoolMultiplier=3`, `rerankLlmModel` (override via `RERANK_LLM_MODEL`)
 - `agent`: `maxSteps=5`, `maxTokensPerResponse=2000`
 - `limits`: `maxUploadBytes`, `maxQuizQuestions=20`, `maxFlashcards=30`
@@ -103,7 +116,7 @@ Harness offline en `evals/`. Mide el pipeline RAG core (`embed → match_chunks 
 | `evals/pipeline.ts` | `runPipeline(supabase, userId, question, documentIds)` |
 | `evals/runner.ts` | CLI entry, ejecutable con `npm run eval` |
 | `evals/compare.ts` | Compara dos `RunReport` con configs distintas (modo o reranker), ejecutable con `npm run eval:compare` |
-| `evals/results/` | `<timestamp>_<mode>_<rerank>.json` por run, gitignored |
+| `evals/results/` | `<timestamp>_<mode>_<rerank>_<provider>.json` por run, gitignored |
 
 Detalles operativos en `evals/README.md`.
 
@@ -120,9 +133,10 @@ components/
   auth/          LoginForm
 lib/
   supabase/      client.ts, server.ts, admin.ts, types.ts (generado)
-  ai/            chunker, embeddings, ingest, ingestion-jobs, tools, retrieval, rerank, prompts, config
+  ai/            chunker, embeddings, ingest, ingestion-jobs, tools, retrieval, rerank, prompts, provider, config
   observability/  traces de metadatos operativos
   chat/          persistence (conversations + messages)
 evals/           harness offline (npm run eval)
+mcp-server/      servidor MCP stdio sobre las tools del agente (npm run mcp)
 supabase/migrations/   001 schema, 002 match_chunks, 003 storage, 004 hybrid, 005 reliability
 ```

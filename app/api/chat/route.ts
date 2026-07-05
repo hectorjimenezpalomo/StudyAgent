@@ -1,7 +1,7 @@
-import { openai } from '@ai-sdk/openai';
 import { convertToCoreMessages, createDataStreamResponse, formatDataStreamPart, streamText } from 'ai';
 import { z } from 'zod';
 import { AI_CONFIG } from '@/lib/ai/config';
+import { getChatModel } from '@/lib/ai/provider';
 import { SYSTEM_PROMPT_AGENT } from '@/lib/ai/prompts';
 import { createAgentTools, type AgentToolContext } from '@/lib/ai/tools';
 import {
@@ -300,12 +300,14 @@ export async function POST(req: Request) {
     0
   );
 
+  const activeChatModel =
+    AI_CONFIG.provider === 'google' ? AI_CONFIG.googleChatModel : AI_CONFIG.chatModel;
   console.log(
-    `[ai/chat] user=${user.id} messages=${messages.length} tools=${Object.keys(tools).join(',')} model=${AI_CONFIG.chatModel} estimated_tokens=${estimatedTokens}`
+    `[ai/chat] user=${user.id} messages=${messages.length} tools=${Object.keys(tools).join(',')} provider=${AI_CONFIG.provider} model=${activeChatModel} estimated_tokens=${estimatedTokens}`
   );
 
   const result = streamText({
-    model: openai(AI_CONFIG.chatModel),
+    model: getChatModel(),
     system: SYSTEM_PROMPT_AGENT,
     messages: convertToCoreMessages(promptHistory.messages),
     tools,

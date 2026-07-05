@@ -13,11 +13,14 @@
     "test:e2e": "playwright test",
     "db:types": "supabase gen types typescript --local > lib/supabase/types.ts",
     "eval": "node --no-warnings=ModuleTypelessPackageJsonWarning --env-file=.env.local evals/runner.ts",
-    "eval:compare": "node --no-warnings=ModuleTypelessPackageJsonWarning evals/compare.ts"
+    "eval:compare": "node --no-warnings=ModuleTypelessPackageJsonWarning evals/compare.ts",
+    "mcp": "node --no-warnings=ModuleTypelessPackageJsonWarning --env-file=.env.local mcp-server/index.ts"
   },
   "dependencies": {
+    "@ai-sdk/google": "^1.2.22",
     "@ai-sdk/openai": "^1.0.0",
     "@ai-sdk/react": "^1.0.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@supabase/ssr": "^0.5.0",
     "@supabase/supabase-js": "^2.45.0",
     "ai": "^4.0.0",

@@ -37,8 +37,18 @@ npm run eval
 
 Resultados:
 - Tabla resumen en consola.
-- JSON detallado en `evals/results/<timestamp>_<mode>.json` (incluye respuestas
-  literales y chunks recuperados por caso, útil para hacer post-mortem).
+- JSON detallado en `evals/results/<timestamp>_<mode>_<rerank>_<provider>.json`
+  (incluye respuestas literales y chunks recuperados por caso, útil para
+  post-mortem).
+
+Por defecto usa `evals/dataset.jsonl`. Para correr otro dataset (p. ej. el
+sintético, ver abajo) pásalo como argumento:
+
+```bash
+npm run eval -- evals/dataset.synthetic.jsonl
+```
+
+La ruta usada queda registrada en `config.dataset` del `RunReport`.
 
 ### Comparar configuraciones (retrieval + reranker)
 
@@ -46,8 +56,9 @@ El harness honra dos flags:
 - `RAG_RETRIEVAL_MODE` (`vector` | `hybrid`).
 - `RERANK_PROVIDER` (`none` | `llm` | `cohere`).
 
-Los results se guardan como `<timestamp>_<mode>_<reranker>.json`, así que
-runs con configs distintas conviven sin pisarse.
+Los results se guardan como `<timestamp>_<mode>_<reranker>_<provider>.json`, así
+que runs con configs distintas (incluido `AI_PROVIDER=openai|google`) conviven
+sin pisarse.
 
 ```bash
 # baseline: vector solo, sin reranker
@@ -107,6 +118,37 @@ order by chunk_index;
 
 Lee el `preview`, identifica los chunks que contienen la respuesta a tu
 pregunta y copia sus `id` al campo `ground_truth_chunk_ids` del caso.
+
+## Dataset sintético (generado por LLM)
+
+Etiquetar `ground_truth_chunk_ids` a mano no escala. El generador
+`evals-py/evals_py/synthesize.py` produce 100+ casos automáticamente: por cada
+chunk real genera una pregunta+respuesta con un LLM, y **el chunk origen ES el
+ground truth** (`ground_truth_chunk_ids = [chunk.id]`). Esto da potencia
+estadística a los deltas hybrid/rerank/provider.
+
+```bash
+cd evals-py
+uv run python -m evals_py.synthesize --user-id <uuid> --per-doc 30 --multi-hop
+# escribe ../evals/dataset.synthetic.jsonl
+cd ..
+npm run eval -- evals/dataset.synthetic.jsonl
+```
+
+**Sesgos del dataset sintético y mitigaciones:**
+- *Solapamiento léxico*: si la pregunta reusa las palabras del chunk, el
+  retrieval lo tiene demasiado fácil (mide vocabulario, no comprensión). El
+  generador obliga a **parafrasear** (prohibido copiar >3 palabras seguidas) y a
+  que la pregunta sea autocontenida.
+- *Preguntas "de una sola fuente"*: casi siempre respondibles con un chunk. El
+  flag `--multi-hop` añade preguntas que requieren dos chunks adyacentes
+  (`ground_truth_chunk_ids` con dos ids).
+- *Muestreo sesgado al principio del documento*: se corrige con **muestreo
+  estratificado por documento y posición** (chunks repartidos, no solo los
+  primeros) y descartando chunks < 200 caracteres.
+
+Interpreta los números absolutos con cautela (un dataset sintético es más fácil
+que preguntas reales); fíjate sobre todo en los **deltas** entre configuraciones.
 
 ## Decisiones tomadas
 

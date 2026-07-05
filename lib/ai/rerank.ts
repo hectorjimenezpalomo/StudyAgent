@@ -16,10 +16,10 @@
  * back al orden original truncado a topK.
  */
 
-import { openai } from '@ai-sdk/openai';
 import { generateObject } from 'ai';
 import { z } from 'zod';
 import { AI_CONFIG, type RerankProvider } from './config';
+import { getChatModel } from './provider';
 import { buildRerankPrompt } from './prompts';
 
 export interface RerankInput {
@@ -57,14 +57,18 @@ const llmRerankSchema = z.object({
     .min(1),
 });
 
-export function createLlmReranker(model: string = AI_CONFIG.rag.rerankLlmModel): Reranker {
+export function createLlmReranker(
+  model: string | undefined = AI_CONFIG.rag.rerankLlmModel
+): Reranker {
   return {
     async rerank(input) {
       if (input.documents.length === 0) return [];
 
       const shuffled = shuffle(input.documents);
       const { object } = await generateObject({
-        model: openai(model),
+        // Sin RERANK_LLM_MODEL, getChatModel(undefined) usa el default del
+        // proveedor activo (evita cargar un modelo OpenAI bajo AI_PROVIDER=google).
+        model: getChatModel(model),
         schema: llmRerankSchema,
         prompt: buildRerankPrompt(
           input.query,

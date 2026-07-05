@@ -29,11 +29,20 @@ flowchart LR
   Q --> W[Worker cron protegido]
   W --> P[pdf-parse + chunking]
   P --> E[OpenAI embeddings 1536d]
-  E --> V[(Postgres + pgvector)]
+  E --> V[(Postgres + pgvector/HNSW)]
+
   U --> C[Chat]
-  C --> A[Agent tools]
-  A --> V
-  A --> R[Respuesta + fuentes]
+  C --> A[Agente + tools]
+  A --> RET[Retrieval: vector o hybrid BM25+RRF]
+  RET --> V
+  RET --> RR[Reranker opcional: LLM / Cohere]
+  RR --> A
+  A --> G["Generación (OpenAI o Gemini vía AI_PROVIDER)"]
+  G --> R[Respuesta + citas]
+
+  MCP[Servidor MCP stdio] --> A
+  V -. mismo pipeline .-> EVTS[evals TS]
+  V -. mismo pipeline .-> EVPY[evals-py + Ragas]
 ```
 
 ## Stack
@@ -41,6 +50,8 @@ flowchart LR
 - Next.js 16 App Router, React 19 y TypeScript estricto
 - Supabase Auth, Postgres, Storage y pgvector
 - Vercel AI SDK v4, OpenAI `gpt-4o-mini` y `text-embedding-3-small`
+- Proveedor de chat conmutable OpenAI ↔ Gemini (`AI_PROVIDER=openai|google`,
+  Gemini vía Google AI Studio); embeddings siempre en OpenAI
 - `pdf-parse`, Zod, Vitest y Playwright
 
 ## Inicio local
@@ -88,21 +99,62 @@ Invoke-WebRequest http://localhost:3000/api/internal/ingest `
   -Headers @{ Authorization = "Bearer $env:CRON_SECRET" }
 ```
 
-## Calidad RAG y límites conocidos
+## Evaluación
 
-El harness en `evals/` mide recall@k, MRR, hit rate, faithfulness, relevancia y
-latencia. No se incluyen documentos privados ni IDs ficticios en Git: antes de
-afirmar una mejora de hybrid search o reranking, añade un dataset etiquetado a
-tu instancia y publica el delta del runner.
+Dos harnesses corren el **mismo pipeline RAG** (mismos RPC de Supabase, mismo
+dataset, mismo formato de salida) sobre un dataset etiquetado:
+
+- **`evals/`** (TypeScript): recall@k, MRR, hit rate, faithfulness/relevancy con
+  LLM-as-judge, latencia. Ejes `RAG_RETRIEVAL_MODE`, `RERANK_PROVIDER`, `AI_PROVIDER`.
+- **`evals-py/`** (Python + Ragas): las mismas métricas propias más `faithfulness`,
+  `answer_relevancy`, `context_precision`, `context_recall` de Ragas, para una
+  meta-evaluación "mi judge vs Ragas". Ver [`evals-py/README.md`](evals-py/README.md).
+
+Dataset: casos reales en `evals/dataset.jsonl` o 100+ casos sintéticos generados
+por LLM (`evals-py/evals_py/synthesize.py`, el chunk origen es el ground truth).
 
 ```bash
-npm run eval
-npm run eval:compare
+# Harness TS: baseline y una variante
+RAG_RETRIEVAL_MODE=vector RERANK_PROVIDER=none npm run eval
+RAG_RETRIEVAL_MODE=hybrid RERANK_PROVIDER=cohere npm run eval
+npm run eval:compare                       # delta entre los dos últimos runs
+
+# Proveedor Gemini (embeddings siguen en OpenAI)
+AI_PROVIDER=google npm run eval
+
+# Harness Python + Ragas
+cd evals-py && uv run python -m evals_py.runner
 ```
 
-Limitaciones actuales: no hay OCR para PDFs escaneados, las citas enlazan a la
-lista de documentos (no a un visor PDF con resaltado), y la cuota de chat es
-un fixed window sencillo, no un control de facturación empresarial.
+### Matriz de resultados
+
+`provider × retrieval_mode × reranker`. Rellena las celdas corriendo los evals
+con tus documentos y API keys (requiere `.env.local`); los resultados no se
+versionan porque dependen de una instancia concreta de Supabase.
+
+| provider | retrieval | reranker | recall@8 | MRR | faithfulness | p95 ms |
+|---|---|---|---|---|---|---|
+| openai | vector | none | _pendiente_ | _pendiente_ | _pendiente_ | _pendiente_ |
+| openai | hybrid | none | _pendiente_ | _pendiente_ | _pendiente_ | _pendiente_ |
+| openai | hybrid | llm | _pendiente_ | _pendiente_ | _pendiente_ | _pendiente_ |
+| openai | hybrid | cohere | _pendiente_ | _pendiente_ | _pendiente_ | _pendiente_ |
+| google | hybrid | cohere | _pendiente_ | _pendiente_ | _pendiente_ | _pendiente_ |
+
+Cada fila = un `npm run eval` con esos `AI_PROVIDER` / `RAG_RETRIEVAL_MODE` /
+`RERANK_PROVIDER`. El workflow `.github/workflows/eval.yml` (manual) corre el eval
+en CI y publica esta tabla en el step summary.
+
+## Servidor MCP
+
+Las 5 tools del agente se exponen como servidor MCP stdio (`npm run mcp`) para
+usarlas desde Claude Desktop o Cursor. Detalles, seguridad y config en
+[`docs/mcp.md`](docs/mcp.md).
+
+## Límites conocidos
+
+No hay OCR para PDFs escaneados, las citas enlazan a la lista de documentos (no a
+un visor PDF con resaltado), y la cuota de chat es un fixed window sencillo, no un
+control de facturación empresarial.
 
 ## Verificación
 
@@ -136,7 +188,10 @@ workflow de CI ejecuta lint, typecheck, tests y build en cada push o PR a
 ## Documentación
 
 - `ARCHITECTURE.md`: contratos de tablas, rutas, tools y configuración.
-- `evals/README.md`: formato del dataset y cómo interpretar los resultados.
-- `ROADMAP.md`: mejoras de RAG y producto todavía pendientes.
+- `evals/README.md`: formato del dataset, dataset sintético y cómo interpretar resultados.
+- `evals-py/README.md`: harness Python + Ragas y meta-evaluación del juez.
+- `docs/mcp.md`: servidor MCP (setup, seguridad, config de Claude Desktop).
+- `docs/adr/`: decisiones de arquitectura (proveedor multiprov., evals Python, MCP).
+- `ROADMAP.md`: niveles 1-3 de mejoras de RAG y producto pendientes.
 - `docs/gcp-mapping.md`: ruta de despliegue GCP sin afirmar una migración no realizada.
 - `AGENTS.md`: reglas de implementación y seguridad.

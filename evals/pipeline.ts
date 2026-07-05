@@ -7,10 +7,10 @@
  * pertenece a un eval distinto (futuro: A1.bis "agent decision eval").
  */
 
-import { openai } from '@ai-sdk/openai';
 import { generateText } from 'ai';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { AI_CONFIG, type RetrievalMode } from '../lib/ai/config';
+import { getChatModel } from '../lib/ai/provider';
 import { buildRagPrompt } from '../lib/ai/prompts';
 import { retrieve, type RetrievalSupabase } from '../lib/ai/retrieval';
 
@@ -67,7 +67,7 @@ export async function runPipeline(
 
   const tGenStart = Date.now();
   const { text } = await generateText({
-    model: openai(AI_CONFIG.chatModel),
+    model: getChatModel(),
     prompt: buildRagPrompt(question, retrieved),
     maxTokens: AI_CONFIG.agent.maxTokensPerResponse,
   });

@@ -24,7 +24,10 @@ const EVALS_DIR = path.resolve(import.meta.dirname);
 const RESULTS_DIR = path.join(EVALS_DIR, 'results');
 
 function configKey(report: RunReport): string {
-  return `${report.config.retrieval_mode}/${report.config.rerank_provider}`;
+  // `provider` puede faltar en runs antiguos previos a la Fase 1; tratamos su
+  // ausencia como 'openai' para no romper la auto-detección con esos ficheros.
+  const provider = report.config.provider ?? 'openai';
+  return `${provider}/${report.config.retrieval_mode}/${report.config.rerank_provider}`;
 }
 
 async function autoDetectReports(): Promise<{ baselinePath: string; candidatePath: string }> {
@@ -108,8 +111,8 @@ function computeCaseDeltas(baseline: RunReport, candidate: RunReport): CaseDelta
 function printReport(baseline: RunReport, candidate: RunReport): void {
   console.log('');
   console.log('=== StudyAgent Eval Compare ===');
-  console.log(`baseline:  ${baseline.config.retrieval_mode} / rerank=${baseline.config.rerank_provider}  @  ${baseline.timestamp}`);
-  console.log(`candidate: ${candidate.config.retrieval_mode} / rerank=${candidate.config.rerank_provider}  @  ${candidate.timestamp}`);
+  console.log(`baseline:  ${baseline.config.provider} / ${baseline.config.retrieval_mode} / rerank=${baseline.config.rerank_provider}  @  ${baseline.timestamp}`);
+  console.log(`candidate: ${candidate.config.provider} / ${candidate.config.retrieval_mode} / rerank=${candidate.config.rerank_provider}  @  ${candidate.timestamp}`);
   console.log(`cases:     ${baseline.aggregate.n_cases} (baseline) vs ${candidate.aggregate.n_cases} (candidate)`);
   console.log('');
 
