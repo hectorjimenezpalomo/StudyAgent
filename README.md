@@ -101,48 +101,44 @@ Invoke-WebRequest http://localhost:3000/api/internal/ingest `
 
 ## Evaluación
 
-Dos harnesses corren el **mismo pipeline RAG** (mismos RPC de Supabase, mismo
-dataset, mismo formato de salida) sobre un dataset etiquetado:
+El objetivo de diseño es no activar hybrid search, reranking ni otro proveedor
+"porque suenan bien", sino **medir cada cambio** contra un dataset antes de
+adoptarlo. Dos harnesses corren el **mismo pipeline RAG** (mismos RPC de Supabase,
+mismo dataset, mismo formato de salida `RunReport`):
 
 - **`evals/`** (TypeScript): recall@k, MRR, hit rate, faithfulness/relevancy con
-  LLM-as-judge, latencia. Ejes `RAG_RETRIEVAL_MODE`, `RERANK_PROVIDER`, `AI_PROVIDER`.
+  LLM-as-judge y latencia por etapa.
 - **`evals-py/`** (Python + Ragas): las mismas métricas propias más `faithfulness`,
-  `answer_relevancy`, `context_precision`, `context_recall` de Ragas, para una
-  meta-evaluación "mi judge vs Ragas". Ver [`evals-py/README.md`](evals-py/README.md).
+  `answer_relevancy`, `context_precision` y `context_recall` de Ragas. Correr
+  ambos sobre las mismas respuestas permite una **meta-evaluación "mi juez vs
+  Ragas"**. Ver [`evals-py/README.md`](evals-py/README.md).
 
-Dataset: casos reales en `evals/dataset.jsonl` o 100+ casos sintéticos generados
-por LLM (`evals-py/evals_py/synthesize.py`, el chunk origen es el ground truth).
+El dataset son casos reales en `evals/dataset.jsonl` o 100+ casos sintéticos
+generados por LLM (`evals-py/evals_py/synthesize.py`, donde el chunk origen es el
+ground truth de retrieval).
+
+### Barrido reproducible
+
+La comparación es un barrido `provider × retrieval_mode × reranker`. Cada
+configuración es un `npm run eval` con esos flags, que produce recall@8, MRR,
+faithfulness y p95 de latencia para esa fila:
 
 ```bash
-# Harness TS: baseline y una variante
-RAG_RETRIEVAL_MODE=vector RERANK_PROVIDER=none npm run eval
-RAG_RETRIEVAL_MODE=hybrid RERANK_PROVIDER=cohere npm run eval
-npm run eval:compare                       # delta entre los dos últimos runs
+RAG_RETRIEVAL_MODE=vector RERANK_PROVIDER=none   npm run eval   # baseline
+RAG_RETRIEVAL_MODE=hybrid RERANK_PROVIDER=none   npm run eval
+RAG_RETRIEVAL_MODE=hybrid RERANK_PROVIDER=llm    npm run eval
+RAG_RETRIEVAL_MODE=hybrid RERANK_PROVIDER=cohere npm run eval   # requiere COHERE_API_KEY
+AI_PROVIDER=google RAG_RETRIEVAL_MODE=hybrid RERANK_PROVIDER=cohere npm run eval
 
-# Proveedor Gemini (embeddings siguen en OpenAI)
-AI_PROVIDER=google npm run eval
-
-# Harness Python + Ragas
-cd evals-py && uv run python -m evals_py.runner
+npm run eval:compare        # delta agregado + casos que mejoran/regresan
+cd evals-py && uv run python -m evals_py.runner   # mismas métricas + Ragas
 ```
 
-### Matriz de resultados
-
-`provider × retrieval_mode × reranker`. Rellena las celdas corriendo los evals
-con tus documentos y API keys (requiere `.env.local`); los resultados no se
-versionan porque dependen de una instancia concreta de Supabase.
-
-| provider | retrieval | reranker | recall@8 | MRR | faithfulness | p95 ms |
-|---|---|---|---|---|---|---|
-| openai | vector | none | _pendiente_ | _pendiente_ | _pendiente_ | _pendiente_ |
-| openai | hybrid | none | _pendiente_ | _pendiente_ | _pendiente_ | _pendiente_ |
-| openai | hybrid | llm | _pendiente_ | _pendiente_ | _pendiente_ | _pendiente_ |
-| openai | hybrid | cohere | _pendiente_ | _pendiente_ | _pendiente_ | _pendiente_ |
-| google | hybrid | cohere | _pendiente_ | _pendiente_ | _pendiente_ | _pendiente_ |
-
-Cada fila = un `npm run eval` con esos `AI_PROVIDER` / `RAG_RETRIEVAL_MODE` /
-`RERANK_PROVIDER`. El workflow `.github/workflows/eval.yml` (manual) corre el eval
-en CI y publica esta tabla en el step summary.
+Los números **no se versionan a propósito**: dependen de tus PDFs y de una
+instancia concreta de Supabase (los `chunk_id` de ground truth pertenecen a esa
+base), así que publicarlos aquí sería ruido no reproducible. El workflow manual
+[`eval.yml`](.github/workflows/eval.yml) ejecuta un run contra tu Supabase y
+publica su agregado en el step summary de la Action.
 
 ## Servidor MCP
 

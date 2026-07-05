@@ -147,6 +147,10 @@ def main() -> None:
     print(f"[evals-py/runner] Ejecutando {len(cases_def)} caso(s)...")
     results: list[CaseResult] = []
     ragas_context_by_case: dict[str, list[str]] = {}
+    # ground_truth_answer del dataset: es la referencia para Ragas
+    # context_precision/recall. NUNCA usar la respuesta generada como referencia
+    # (sería circular).
+    ground_truth_by_case: dict[str, str] = {c.id: c.ground_truth_answer for c in cases_def}
 
     for i, case in enumerate(cases_def, start=1):
         print(f"  ({i}/{len(cases_def)}) {case.id} ... ", end="", flush=True)
@@ -157,9 +161,11 @@ def main() -> None:
                                              "No se pudo resolver user_id."))
                 print("ERROR (user_id)")
                 continue
+            t_retrieval = time.perf_counter()
             chunks = _retrieve(supabase, openai_client, user_id, case)
+            retrieval_ms = (time.perf_counter() - t_retrieval) * 1000
             ragas_context_by_case[case.id] = [c.content for c in chunks]
-            result = _finish_case(openai_client, case, chunks)
+            result = _finish_case(openai_client, case, chunks, retrieval_ms)
             results.append(result)
             print("ERROR" if result.error else "ok")
         except Exception as err:  # noqa: BLE001
@@ -167,7 +173,7 @@ def main() -> None:
             print(f"THROW ({err})")
 
     if not args.skip_ragas:
-        _attach_ragas_with_contexts(results, ragas_context_by_case)
+        _attach_ragas_with_contexts(results, ragas_context_by_case, ground_truth_by_case)
 
     report = RunReport(
         timestamp=datetime.now(timezone.utc).isoformat(),
@@ -199,9 +205,10 @@ def main() -> None:
     print(f"[evals-py/runner] Resultado guardado en evals/results/{file_name}")
 
 
-def _finish_case(openai_client: OpenAI, case: EvalCase, chunks: list[db.Chunk]) -> CaseResult:
+def _finish_case(
+    openai_client: OpenAI, case: EvalCase, chunks: list[db.Chunk], retrieval_ms: float
+) -> CaseResult:
     has_gt = len(case.ground_truth_chunk_ids) > 0
-    total_start = time.perf_counter()
     retrieved_ids = [c.id for c in chunks]
 
     t1 = time.perf_counter()
@@ -213,7 +220,8 @@ def _finish_case(openai_client: OpenAI, case: EvalCase, chunks: list[db.Chunk]) 
     faithfulness = judge.judge_faithfulness(openai_client, context_text, answer)
     relevancy = judge.judge_answer_relevancy(openai_client, case.question, answer)
     judge_ms = (time.perf_counter() - t2) * 1000
-    total_ms = (time.perf_counter() - total_start) * 1000
+    # total incluye embedding+retrieval (medido por el llamante), generación y juez.
+    total_ms = retrieval_ms + generation_ms + judge_ms
 
     return CaseResult(
         case_id=case.id,
@@ -231,13 +239,18 @@ def _finish_case(openai_client: OpenAI, case: EvalCase, chunks: list[db.Chunk]) 
             faithfulness=faithfulness, answer_relevancy=relevancy, answer_text=answer
         ),
         latency=LatencyMetrics(
-            retrieval_ms=0, generation_ms=generation_ms, judge_ms=judge_ms, total_ms=total_ms
+            retrieval_ms=retrieval_ms,
+            generation_ms=generation_ms,
+            judge_ms=judge_ms,
+            total_ms=total_ms,
         ),
     )
 
 
 def _attach_ragas_with_contexts(
-    cases: list[CaseResult], contexts_by_case: dict[str, list[str]]
+    cases: list[CaseResult],
+    contexts_by_case: dict[str, list[str]],
+    ground_truth_by_case: dict[str, str],
 ) -> None:
     try:
         from .ragas_eval import RagasSample, evaluate_samples
@@ -254,7 +267,8 @@ def _attach_ragas_with_contexts(
             question=c.question,
             answer=c.generation.answer_text,
             contexts=contexts_by_case.get(c.case_id) or [""],
-            reference=c.generation.answer_text,
+            # Referencia = respuesta esperada del dataset, no la generada.
+            reference=ground_truth_by_case.get(c.case_id, ""),
         )
         for c in ok
     ]
