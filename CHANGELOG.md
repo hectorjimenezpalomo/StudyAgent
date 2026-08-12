@@ -11,7 +11,7 @@ project follows semantic versioning for public releases.
 - Open-source governance, contribution, security, and community-health files.
 - Reproducible setup checks, demo documentation, and maintenance automation.
 
-## [0.1.0] - 2026-08-11
+## [0.1.0] - 2026-08-12
 
 ### Added
 

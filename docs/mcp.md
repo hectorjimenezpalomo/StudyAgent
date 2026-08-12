@@ -1,86 +1,46 @@
-# Servidor MCP de StudyAgent
+# StudyAgent MCP server
 
-Expone las 5 tools del agente como un **servidor MCP (Model Context Protocol)**
-por stdio, para consumirlas desde clientes MCP como Claude Desktop o Cursor.
-Reutiliza `createAgentTools(context)`: mismos schemas zod, mismas descripciones y
-mismo `execute` que el agente de `/api/chat`.
+The local stdio server exposes `search_documents`, `generate_quiz`, `generate_summary`, `generate_flashcards`, and `explain_concept`. It reuses `createAgentTools(context)`, including the same zod schemas, descriptions, and implementations as `/api/chat`.
 
-Tools expuestas: `search_documents`, `generate_quiz`, `generate_summary`,
-`generate_flashcards`, `explain_concept`.
+## Security boundary
 
-## Seguridad (léelo antes de arrancarlo)
+The server uses the service-role client, which bypasses RLS. A fixed, validated `MCP_USER_ID` is the isolation boundary: context loading selects only that user's ready documents, and every tool filters against `allowedDocumentIds`. There is no per-request session or multi-user authentication.
 
-- El server usa el **cliente service-role**, que **salta RLS**. La única barrera
-  de aislamiento es el filtro por `MCP_USER_ID`: solo se cargan documentos con
-  `status='ready'` de ese usuario, y las tools filtran en profundidad sobre
-  `allowedDocumentIds`.
-- Por eso el usuario es **fijo por proceso** (no hay sesión). Un despliegue
-  multiusuario real necesitaría auth por request, fuera del alcance actual.
-- **NUNCA expongas este proceso a red.** Es stdio local para un cliente de
-  escritorio de confianza. No lo pongas detrás de un puerto ni un túnel.
-- Todos los logs van a `console.error` (stdout pertenece al protocolo MCP).
+Never expose this process through a port, tunnel, shared service, or untrusted client. Run it only as local stdio for one trusted desktop client. Keep `SUPABASE_SERVICE_ROLE_KEY`, provider keys, private document content, tool inputs, and results out of logs and configuration committed to Git. All server logs use stderr because stdout belongs to MCP.
 
-Decisión y trade-offs en `docs/adr/0003-servidor-mcp.md`.
+## Environment
 
-## Variables de entorno
+Required: `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`, and `MCP_USER_ID`. Provider, retrieval, and reranking variables are inherited from the app. Run `npm run doctor -- --mcp` before starting.
 
-El server valida el entorno con zod al arrancar y sale con un mensaje claro si
-falta algo:
+## Run and inspect
 
-| var | uso |
-|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | proyecto Supabase |
-| `SUPABASE_SERVICE_ROLE_KEY` | cliente admin (salta RLS) |
-| `OPENAI_API_KEY` | embeddings de `search_documents` (y generación si `AI_PROVIDER=openai`) |
-| `MCP_USER_ID` | uuid del usuario cuyos documentos se sirven |
-
-Opcionales heredadas de la app: `AI_PROVIDER`, `GOOGLE_GENERATIVE_AI_API_KEY`,
-`RAG_RETRIEVAL_MODE`, `RERANK_PROVIDER`, etc.
-
-## Arrancar en local
-
-```powershell
+```bash
 npm run mcp
-```
-
-Equivale a `node --import tsx --env-file=.env.local mcp-server/index.ts` (el
-loader `tsx` resuelve TypeScript y los imports sin extensión). Añade
-`MCP_USER_ID=<tu-uuid>` a `.env.local` (el uuid de `auth.users` cuyo material
-quieres servir).
-
-## Probarlo con el inspector
-
-```powershell
 npx @modelcontextprotocol/inspector node --import tsx --env-file=.env.local mcp-server/index.ts
 ```
 
-En el inspector: **List Tools** debe mostrar las 5; llama `search_documents` con
-`{ "query": "..." }` y comprueba que devuelve chunks con sus fuentes.
+The inspector should list all five tools. Call `search_documents` with a sanitized query and confirm sources are returned.
 
-## Config para Claude Desktop (Windows)
+## Desktop configuration
 
-Edita `%APPDATA%\Claude\claude_desktop_config.json`. Usa rutas **absolutas** y
-pasa las env directamente (el proceso no lee `.env.local` si lo lanza el cliente):
+Use absolute paths. Desktop clients do not necessarily load `.env.local`, so provide secrets through the client's local environment configuration and never commit that file.
 
 ```json
 {
   "mcpServers": {
     "studyagent": {
       "command": "node",
-      "args": [
-        "--import",
-        "tsx",
-        "C:\\Users\\<tu-usuario>\\...\\studyagent\\mcp-server\\index.ts"
-      ],
+      "args": ["--import", "tsx", "/absolute/path/to/studyagent/mcp-server/index.ts"],
       "env": {
         "NEXT_PUBLIC_SUPABASE_URL": "https://<ref>.supabase.co",
         "SUPABASE_SERVICE_ROLE_KEY": "<service-role-key>",
-        "OPENAI_API_KEY": "sk-...",
-        "MCP_USER_ID": "<uuid-del-usuario>"
+        "OPENAI_API_KEY": "<openai-key>",
+        "MCP_USER_ID": "<user-uuid>"
       }
     }
   }
 }
 ```
 
-Reinicia Claude Desktop; las tools de `studyagent` aparecerán en el selector.
+Restart the client after editing its configuration. Windows uses escaped backslashes in JSON paths. See [ADR 0003](adr/0003-servidor-mcp.md) for the decision and trade-offs. Testing on macOS and Linux is tracked in [issue #8](https://github.com/hectorjimenezpalomo/StudyAgent/issues/8).
+
