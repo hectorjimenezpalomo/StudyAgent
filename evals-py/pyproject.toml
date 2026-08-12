@@ -5,7 +5,7 @@ description = "Harness de evaluación RAG de StudyAgent en Python (paridad con e
 requires-python = ">=3.11"
 dependencies = [
     "supabase>=2.7,<3",
-    "openai>=1.40,<2",
+    "openai>=2.53.0,<3",
     "ragas>=0.2,<0.3",
     "langchain-openai>=0.2,<0.4",
     "pydantic>=2.7,<3",
