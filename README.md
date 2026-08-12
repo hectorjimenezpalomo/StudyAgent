@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/hectorjimenezpalomo/StudyAgent/actions/workflows/ci.yml/badge.svg)](https://github.com/hectorjimenezpalomo/StudyAgent/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/hectorjimenezpalomo/StudyAgent)](https://github.com/hectorjimenezpalomo/StudyAgent/releases/latest)
 
 **An open-source, evaluation-first RAG study assistant for private documents.**
 
