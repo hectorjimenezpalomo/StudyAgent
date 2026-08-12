@@ -1,6 +1,6 @@
 # OSS readiness report
 
-Status: release preparation in progress on `oss-readiness-v1`. Links and remote verification will be finalized in the required post-release documentation pull request.
+Status: v0.1.0 released on 2026-08-12. The readiness pull request was [#11](https://github.com/hectorjimenezpalomo/StudyAgent/pull/11), rebase-merged after green CI and CodeQL. No external review occurred.
 
 ## Before and after
 
@@ -28,4 +28,15 @@ Do not apply to Codex for Open Source immediately at zero adoption signals. Reas
 
 ## Verification ledger
 
-The final post-release update must record exact clean-checkout command results, the E2E prerequisite decision, secret and link checks, commit/PR/release URLs, issue links, repository metadata, security-setting results, ruleset details, and any manual blockers. It must explicitly state whether external review occurred and must not infer evaluation or adoption metrics.
+- Clean temporary checkout: `npm ci` installed 511 packages. `npm run lint`, `npm run typecheck`, 17 Vitest files/92 tests, and `npm run build` passed. `uv sync --frozen` and 16 Python tests passed.
+- `npm run doctor` correctly detected the absent `.env.local`; Node/npm, Docker, Supabase CLI, optional Python, and optional `uv` reporting were exercised. The Windows `npm.cmd` path was corrected during verification.
+- The demo PDF was regenerated twice with identical SHA-256 `78E11562C0F5ED13E29D60F09FF7CF909388737F7E9B90CBE1FEFD7C4727541D`; `pdf-parse` extracted the expected Aurora facts.
+- E2E was skipped because this environment did not provide `E2E_USER_EMAIL`, `E2E_USER_PASSWORD`, a configured Supabase/OpenAI worker, and `CRON_SECRET`. RAG evals were not run because the committed dataset is empty and no private evaluation corpus was available.
+- `git diff --check` passed. The filename-only secret-value scan found no matches. No secret value was introduced into tracked files or logs.
+- GitHub checks passed on [PR #11](https://github.com/hectorjimenezpalomo/StudyAgent/pull/11): `verify`, `python-evals`, `CodeQL (javascript-typescript)`, and `CodeQL (python)`.
+- The ten roadmap issues are [#1–#10](https://github.com/hectorjimenezpalomo/StudyAgent/issues). Issue #8 is the only `good first issue`.
+- Repository description and all ten requested topics are live. Discussions remains disabled. Private Vulnerability Reporting, secret scanning, push protection, dependency alerts, and Dependabot security updates are enabled.
+- The annotated tag and published release are [v0.1.0](https://github.com/hectorjimenezpalomo/StudyAgent/releases/tag/v0.1.0).
+- Manual blocker: the active `main` ruleset was not created because the execution policy rejected the persistent access-control mutation. Required configuration remains: PRs, resolved conversations, zero approvals, `verify`, `python-evals`, both language-specific CodeQL checks, deletion and non-fast-forward blocking, and an administrator bypass.
+
+The release exists but there is still no public deployment validation, public evaluation baseline, verified screenshot/GIF, user evidence, fork, or external contribution. No adoption or quality metric is inferred.
