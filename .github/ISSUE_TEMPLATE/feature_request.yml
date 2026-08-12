@@ -1,0 +1,27 @@
+name: Feature request
+description: Propose a focused improvement to StudyAgent.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user problem would this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Explain the behavior and relevant alternatives.
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: RAG, privacy, and evaluation impact
+      description: Note any expected retrieval, model, data, migration, or privacy implications.
+    validations:
+      required: true
+
