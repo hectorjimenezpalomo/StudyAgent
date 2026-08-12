@@ -37,6 +37,6 @@ Do not apply to Codex for Open Source immediately at zero adoption signals. Reas
 - The ten roadmap issues are [#1–#10](https://github.com/hectorjimenezpalomo/StudyAgent/issues). Issue #8 is the only `good first issue`.
 - Repository description and all ten requested topics are live. Discussions remains disabled. Private Vulnerability Reporting, secret scanning, push protection, dependency alerts, and Dependabot security updates are enabled.
 - The annotated tag and published release are [v0.1.0](https://github.com/hectorjimenezpalomo/StudyAgent/releases/tag/v0.1.0).
-- Manual blocker: the active `main` ruleset was not created because the execution policy rejected the persistent access-control mutation. Required configuration remains: PRs, resolved conversations, zero approvals, `verify`, `python-evals`, both language-specific CodeQL checks, deletion and non-fast-forward blocking, and an administrator bypass.
+- The active [`Protect main` ruleset](https://github.com/hectorjimenezpalomo/StudyAgent/rules/20723054) requires pull requests, resolved conversations, zero approvals, `verify`, `python-evals`, both language-specific CodeQL checks, and rebase merges. It blocks deletion and non-fast-forward pushes and retains a permanent administrator bypass for the sole maintainer.
 
 The release exists but there is still no public deployment validation, public evaluation baseline, verified screenshot/GIF, user evidence, fork, or external contribution. No adoption or quality metric is inferred.
