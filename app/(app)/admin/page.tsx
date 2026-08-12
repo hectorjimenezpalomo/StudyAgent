@@ -35,7 +35,7 @@ export default async function AdminPage() {
 
   const adminEmails = getAdminEmails();
   if (!user.email || !adminEmails.includes(user.email.toLowerCase())) {
-    console.error('[admin] unauthorized', user.email);
+    console.error('[admin] unauthorized access attempt');
     redirect('/chat');
   }
 

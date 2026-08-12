@@ -263,7 +263,7 @@ export async function POST(req: Request) {
 
   if (readyDocumentIds.length === 0) {
     console.log(
-      `[ai/chat] user=${user.id} messages=${messages.length} chunks=0 model=none estimated_tokens=0`
+      `[api/chat] messages=${messages.length} chunks=0 model=none estimated_tokens=0`
     );
     await persistChatMessage(supabase, {
       conversationId,
@@ -303,7 +303,7 @@ export async function POST(req: Request) {
   const activeChatModel =
     AI_CONFIG.provider === 'google' ? AI_CONFIG.googleChatModel : AI_CONFIG.chatModel;
   console.log(
-    `[ai/chat] user=${user.id} messages=${messages.length} tools=${Object.keys(tools).join(',')} provider=${AI_CONFIG.provider} model=${activeChatModel} estimated_tokens=${estimatedTokens}`
+    `[api/chat] messages=${messages.length} tools=${Object.keys(tools).join(',')} provider=${AI_CONFIG.provider} model=${activeChatModel} estimated_tokens=${estimatedTokens}`
   );
 
   const result = streamText({

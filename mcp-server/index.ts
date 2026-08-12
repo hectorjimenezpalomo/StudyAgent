@@ -50,12 +50,12 @@ function registerAgentTool(server: McpServer, name: string, aiTool: AiSdkTool): 
           toolCallId: `mcp-${name}`,
           messages: [],
         });
-        return toTextResult(result ?? { message: 'La tool no devolvió resultado.' });
+        return toTextResult(result ?? { message: 'The tool returned no result.' });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        console.error(`[mcp/server] tool ${name} falló:`, message);
+        console.error(`[mcp/server] tool ${name} failed:`, message);
         return {
-          content: [{ type: 'text', text: `Error al ejecutar ${name}: ${message}` }],
+          content: [{ type: 'text', text: `The ${name} tool failed. Check the server logs.` }],
           isError: true,
         };
       }
@@ -73,9 +73,7 @@ async function main(): Promise<void> {
     config.userId
   );
 
-  console.error(
-    `[mcp/server] usuario=${config.userId} documentos_ready=${context.allowedDocumentIds.length}`
-  );
+  console.error(`[mcp/server] ready_documents=${context.allowedDocumentIds.length}`);
 
   const tools = createAgentTools(context);
   const server = new McpServer({ name: 'studyagent', version: '0.1.0' });
@@ -86,7 +84,7 @@ async function main(): Promise<void> {
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('[mcp/server] listo (stdio). Tools: ' + Object.keys(tools).join(', '));
+  console.error('[mcp/server] ready (stdio). Tools: ' + Object.keys(tools).join(', '));
 }
 
 main().catch((err: unknown) => {
