@@ -22,7 +22,7 @@
     "mcp": "node --import tsx --env-file=.env.local mcp-server/index.ts"
   },
   "dependencies": {
-    "@ai-sdk/google": "^1.2.22",
+    "@ai-sdk/google": "^4.0.39",
     "@ai-sdk/openai": "^1.0.0",
     "@ai-sdk/react": "^1.0.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
