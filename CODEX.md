@@ -1,25 +1,25 @@
 # CODEX.md
 
-Briefing para agentes de codificación (Codex, Claude Code, Cursor).
+Briefing for coding agents (Codex, Claude Code, Cursor).
 
-## Antes de tocar el repo
+## Before changing the repository
 
-1. `AGENTS.md` — reglas absolutas.
-2. `ARCHITECTURE.md` — catálogo de nombres y tipos.
-3. `ROADMAP.md` — trabajo pendiente o futuro.
+1. `AGENTS.md` — non-negotiable rules.
+2. `ARCHITECTURE.md` — catalog of names and types.
+3. `ROADMAP.md` — pending and future work.
 
-## Cómo trabajas aquí
+## How to work here
 
-- Implementas siguiendo las reglas de `AGENTS.md`. Si una parece arbitraria, asume que tiene razón.
-- Si vas a desviarte de una regla, justifícalo en el mensaje del commit y actualiza `AGENTS.md` en el mismo commit.
-- Los archivos `*.test.ts` definen el comportamiento esperado. Tu implementación debe hacerlos pasar.
-- Si un cambio toca BBDD, tools del agente, o políticas RLS, lee la regla 2 de `AGENTS.md` antes de empezar.
+- Follow every rule in `AGENTS.md`. If one seems arbitrary, assume it is intentional.
+- If you must deviate from a rule, justify it in the commit message and update `AGENTS.md` in the same commit.
+- `*.test.ts` files define expected behavior. Your implementation must make them pass.
+- If a change affects the database, agent tools, or RLS policies, read rule 2 in `AGENTS.md` before starting.
 
-## Decisiones que NO tomas tú
+## Decisions you must NOT make
 
-Ver la sección "Decisiones que NO toma el agente" de `AGENTS.md`. Esas requieren PR con propuesta y revisión humana.
+See "Decisions an agent must NOT make" in `AGENTS.md`. Those require a proposed pull request and human review.
 
-## Verificación antes de marcar una tarea como hecha
+## Verification before marking work complete
 
 ```
 npm run typecheck
@@ -27,4 +27,4 @@ npm run test
 npm run build
 ```
 
-Si la tarea toca UI o flujos críticos, además `npm run test:e2e`.
+If the task affects the UI or critical flows, also run `npm run test:e2e`.
