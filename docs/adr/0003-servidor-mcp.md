@@ -1,32 +1,17 @@
-# 0003 — Servidor MCP sobre las tools del agente
+# 0003 — MCP server over agent tools
 
-## Contexto
+## Context
 
-La oferta menciona MCP (Model Context Protocol) por nombre. Ya tenemos 5 tools
-del agente bien definidas (`search_documents`, `generate_quiz`,
-`generate_summary`, `generate_flashcards`, `explain_concept`) creadas con
-`createAgentTools(context)`, con schema zod y contexto inyectable. Exponerlas
-como servidor MCP es el ítem con mejor ratio señal/esfuerzo: reutiliza todo.
+StudyAgent already defines five zod-validated tools through `createAgentTools(context)`. Exposing the same implementations through Model Context Protocol avoids duplicating retrieval and study-tool behavior.
 
-## Decisión
+## Decision
 
-- Añadir `mcp-server/index.ts` (servidor MCP stdio con
-  `@modelcontextprotocol/sdk`) que reutiliza `createAgentTools`, registrando cada
-  tool con su **mismo shape zod** y descripción.
-- Auth: el server usa el cliente **service-role** (salta RLS) y filtra en
-  profundidad por un `MCP_USER_ID` fijo (uuid del usuario cuyos documentos se
-  sirven), construyendo `allowedDocumentIds` desde `documents` con
-  `status='ready'`. Es el mismo patrón de defensa en profundidad que las rutas
-  API, pero sin sesión: por eso el user es fijo por proceso.
-- Todo log va a `console.error` (stdout pertenece al protocolo MCP), prefijo
-  `[mcp/server]`.
+- Add a stdio server in `mcp-server/index.ts` using `@modelcontextprotocol/sdk`. Register every tool with the same zod shape and description.
+- Use the service-role client and defense-in-depth filtering for one fixed `MCP_USER_ID`. Build `allowedDocumentIds` only from that user's ready documents. There is no per-request session, so the user is fixed per process.
+- Send every log to `console.error` with the `[mcp/server]` prefix because stdout belongs to MCP.
 
-## Consecuencias
+## Consequences
 
-- Trade-off de seguridad explícito: al saltar RLS con service-role, la única
-  barrera es el filtro por `MCP_USER_ID`. **Este server NUNCA debe exponerse a
-  red**; es stdio local para un cliente de escritorio de confianza. Documentado
-  en `docs/mcp.md`.
-- Multi-usuario real requeriría auth por request (fuera de alcance de Nivel 1).
-- El contexto (`mcp-server/context.ts`) es testeable de forma aislada con un mock
-  de Supabase.
+- Service-role bypasses RLS, leaving the validated user filter as the isolation boundary. This process must never be network-exposed; it is local stdio for one trusted desktop client.
+- A real multi-user server would require per-request authentication and is out of scope.
+- `mcp-server/context.ts` remains independently testable with a Supabase mock.

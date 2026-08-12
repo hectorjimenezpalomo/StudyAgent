@@ -1,46 +1,46 @@
 # AGENTS.md
 
-Reglas que aplican al escribir código en este repo. Léelas una vez al empezar la sesión.
+Rules that apply when writing code in this repository. Read them once at the start of a session.
 
-> Catálogo (tablas, rutas, tools, tipos): `ARCHITECTURE.md`. Trabajo pendiente: `ROADMAP.md`.
+> Catalog (tables, routes, tools, types): `ARCHITECTURE.md`. Pending work: `ROADMAP.md`.
 
-## Stack — versiones fijadas
+## Stack — pinned versions
 
-- Next.js 16 App Router, React 19, TypeScript estricto, Node 20+
-- `@supabase/ssr` para auth (no `@supabase/auth-helpers-nextjs`, deprecado)
+- Next.js 16 App Router, React 19, strict TypeScript, Node 20+
+- `@supabase/ssr` for auth (not the deprecated `@supabase/auth-helpers-nextjs`)
 - Vercel AI SDK v4: `ai`, `@ai-sdk/openai`, `@ai-sdk/react`
-- `pdf-parse` para extracción, `zod` para validación
+- `pdf-parse` for extraction, `zod` for validation
 
-## Reglas absolutas
+## Non-negotiable rules
 
-1. **API keys son server-only.** `OPENAI_API_KEY` y `SUPABASE_SERVICE_ROLE_KEY` no aparecen en archivos con `'use client'`.
-2. **RLS obligatoria en cualquier tabla nueva**, en la misma migración que la crea. Política base: `user_id = auth.uid()`. Bucket: filtro por carpeta `(storage.foldername(name))[1] = auth.uid()::text`.
-3. **Validación con zod en todo input externo**: bodies de API, parámetros de tools del agente, form data. Sin excepciones.
-4. **Cliente Supabase correcto según contexto:**
-   - `lib/supabase/client.ts` → componentes con `'use client'`
-   - `lib/supabase/server.ts` → server components, route handlers, server actions
-   - `lib/supabase/admin.ts` → solo lib server-side, cuando hay que saltarse RLS deliberadamente y tras haber validado al usuario por otra vía
-5. **Configuración centralizada**: modelos en `lib/ai/config.ts`, prompts en `lib/ai/prompts.ts`. Nunca strings de modelo ni prompts en línea en rutas.
-6. **Embeddings: dimensión 1536.** Si se cambia el modelo, migración nueva con `vector(N)` correcto y re-embedding completo. Mezclar dimensiones es un bug silencioso.
-7. **TypeScript estricto, sin `any`.** APIs externas que devuelven `unknown` se narrow con zod, no con cast.
-8. **Logs server-side con prefijo `[modulo/sub]`**: `[api/chat]`, `[ai/ingest]`, etc. Errores con `console.error`. Nunca devolver trazas al cliente.
+1. **API keys are server-only.** `OPENAI_API_KEY` and `SUPABASE_SERVICE_ROLE_KEY` must never appear in files containing `'use client'`.
+2. **RLS is mandatory for every new table**, in the same migration that creates it. Base policy: `user_id = auth.uid()`. Bucket policy: folder filter `(storage.foldername(name))[1] = auth.uid()::text`.
+3. **Validate every external input with zod**: API bodies, agent-tool parameters, and form data. No exceptions.
+4. **Use the correct Supabase client for each context:**
+   - `lib/supabase/client.ts` → components containing `'use client'`
+   - `lib/supabase/server.ts` → Server Components, route handlers, and Server Actions
+   - `lib/supabase/admin.ts` → server-only libraries, when deliberately bypassing RLS after validating the user through another path
+5. **Centralize configuration**: models in `lib/ai/config.ts`, prompts in `lib/ai/prompts.ts`. Never place model strings or inline prompts in routes.
+6. **Embedding dimension: 1536.** Changing the model requires a new migration with the correct `vector(N)` and a full re-embedding. Mixing dimensions is a silent bug.
+7. **Strict TypeScript, no `any`.** Narrow `unknown` values returned by external APIs with zod, not casts.
+8. **Prefix server-side logs with `[module/submodule]`**: `[api/chat]`, `[ai/ingest]`, and so on. Use `console.error` for errors. Never return stack traces to clients.
 
-## Tools del agente
+## Agent tools
 
-Se crean con la factory `createAgentTools(context)` de `lib/ai/tools.ts`. El contexto inyecta `userId` y `allowedDocumentIds` para filtrado en profundidad encima de RLS. Toda tool nueva exige: schema zod, descripción accionable para el modelo (con cuándo usarla, no qué hace internamente), y entry en `ARCHITECTURE.md`.
+Create them with the `createAgentTools(context)` factory in `lib/ai/tools.ts`. The context injects `userId` and `allowedDocumentIds` for defense-in-depth filtering on top of RLS. Every new tool requires a zod schema, an actionable model-facing description that says when to use it rather than how it works internally, and an entry in `ARCHITECTURE.md`.
 
-## Procesos
+## Process
 
-- Antes de añadir tabla, ruta API o tool nueva: actualizar `ARCHITECTURE.md` en el mismo commit.
-- Cambios a prompts: commit separado, mensaje `prompt(<nombre>): <cambio>`.
-- Migraciones son inmutables tras commitearlas. Cualquier cambio = migración nueva.
-- Commits en imperativo en inglés. El mensaje describe el cambio, no el método (no "use AI to refactor X").
+- Before adding a table, API route, or tool, update `ARCHITECTURE.md` in the same commit.
+- Prompt changes require a separate commit with message `prompt(<name>): <change>`.
+- Migrations are immutable once committed. Every change requires a new migration.
+- Write imperative commit messages in English. Describe the change, not the method (do not write "use AI to refactor X").
 
-## Decisiones que NO toma el agente
+## Decisions an agent must NOT make
 
-- Cambiar modelo de LLM o de embeddings.
-- Cambiar dimensión del vector o cualquier esquema sin migración.
-- Añadir dependencias nuevas a `package.json`.
-- Cambiar políticas RLS o cualquier regla de este documento.
+- Change the LLM or embedding model.
+- Change the vector dimension or any schema without a migration.
+- Add dependencies to `package.json`.
+- Change RLS policies or any rule in this document.
 
-Para esas decisiones, propón en el PR y espera revisión.
+Propose those decisions in a pull request and wait for review.

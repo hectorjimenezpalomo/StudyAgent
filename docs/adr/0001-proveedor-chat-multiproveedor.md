@@ -1,35 +1,19 @@
-# 0001 — Proveedor de chat multiproveedor (OpenAI ↔ Gemini)
+# 0001 — Multi-provider chat (OpenAI ↔ Gemini)
 
-## Contexto
+## Context
 
-La oferta de Intern AI Engineer lista Vertex AI/Gemini como nice-to-have y el
-proyecto es 100% OpenAI. Queremos poder comparar proveedores con el mismo
-harness de evals sin reescribir el pipeline. El dueño NO tiene cuenta GCP, así
-que Vertex AI (que exige proyecto GCP + credenciales de servicio) no es viable
-todavía.
+The application originally used only OpenAI. Supporting comparable providers through the same evaluation harness should not require rewriting the pipeline. Vertex AI is not currently viable because it requires a GCP project and service credentials that the maintainer does not have.
 
-## Decisión
+## Decision
 
-- Añadir `AI_PROVIDER=openai|google` (default `openai`) y una factoría
-  `lib/ai/provider.ts::getChatModel()` que es el único punto que conoce el SDK
-  de proveedor. Todos los call sites de chat/generación pasan por ella.
-- Usar **Gemini vía Google AI Studio** (`@ai-sdk/google`, env
-  `GOOGLE_GENERATIVE_AI_API_KEY`, API key gratuita), NO `@ai-sdk/google-vertex`.
-  Migrar a Vertex más adelante = sustituir el import del SDK en `provider.ts`;
-  ningún otro archivo cambia.
-- `@ai-sdk/google` se fija en major 1 (compatible con `ai@^4`); la v2 exige AI
-  SDK 5.
-- **Los embeddings NO migran**: siguen en OpenAI `text-embedding-3-small`
-  (1536D). El índice HNSW está horneado a 1536D y cambiar de modelo obliga a
-  re-ingestar todo el corpus (ver AGENTS.md regla 6). `OPENAI_API_KEY` sigue
-  siendo obligatoria aunque `AI_PROVIDER=google`.
+- Add `AI_PROVIDER=openai|google` (default `openai`) and make `lib/ai/provider.ts::getChatModel()` the only provider-aware factory. Every chat and generation call site uses it.
+- Use Gemini through Google AI Studio (`@ai-sdk/google` and `GOOGLE_GENERATIVE_AI_API_KEY`), not `@ai-sdk/google-vertex`. A future Vertex migration should require changing only the provider factory.
+- Keep `@ai-sdk/google` on major version 1 for compatibility with `ai@^4`; version 2 requires AI SDK 5.
+- Do not migrate embeddings. They remain OpenAI `text-embedding-3-small` at 1536 dimensions. The HNSW index is fixed at 1536 dimensions, so changing it requires full corpus re-ingestion under rule 6 of `AGENTS.md`. `OPENAI_API_KEY` remains required with Google chat.
 
-## Consecuencias
+## Consequences
 
-- Se puede publicar una matriz `provider × retrieval_mode × reranker` con el
-  harness existente.
-- El reranker `llm` y el judge de evals heredan el proveedor activo; el default
-  del reranker deja de estar hardcodeado a `gpt-4o-mini` para no cargar un modelo
-  OpenAI bajo el proveedor Google.
-- Añadir la dependencia es una "decisión humana" (AGENTS.md): tomada por el dueño
-  en esta sesión y registrada aquí y en el mensaje de commit.
+- The existing harness can compare a `provider × retrieval_mode × reranker` matrix.
+- The LLM reranker and evaluation judge inherit the active provider; the reranker default is not hard-coded to an OpenAI model under Google.
+- Adding the provider dependency was a human-owned decision recorded here and in its commit, as required by `AGENTS.md`.
+
