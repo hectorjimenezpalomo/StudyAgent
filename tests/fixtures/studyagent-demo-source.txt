@@ -1,0 +1,14 @@
+StudyAgent Demo Notes
+
+The Aurora study method has three steps: retrieve, explain, and verify.
+First, retrieve one idea from memory without looking at the notes.
+Second, explain the idea in plain language and connect it to an example.
+Third, verify the explanation against the source and correct any gap.
+
+A short session lasts 25 minutes: 15 minutes to retrieve and explain,
+5 minutes to verify, and 5 minutes to write two flashcards.
+
+The method recommends reviewing a difficult flashcard after one day,
+three days, and seven days. Its purpose is to combine active recall,
+explanation, source checking, and spaced review in one repeatable routine.
+

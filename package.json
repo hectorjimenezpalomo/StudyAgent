@@ -2,6 +2,9 @@
   "name": "studyagent",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
@@ -11,6 +14,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "doctor": "node scripts/doctor.mjs",
+    "demo:fixture": "node scripts/generate-demo-pdf.mjs",
     "db:types": "supabase gen types typescript --local > lib/supabase/types.ts",
     "eval": "node --import tsx --env-file=.env.local evals/runner.ts",
     "eval:compare": "node --import tsx evals/compare.ts",
