@@ -1,0 +1,13 @@
+changelog:
+  categories:
+    - title: Features
+      labels: [enhancement, frontend, backend, rag, mcp]
+    - title: Evaluation
+      labels: [evals]
+    - title: Security and dependencies
+      labels: [security, dependencies]
+    - title: Fixes
+      labels: [bug]
+    - title: Other changes
+      labels: ["*"]
+
