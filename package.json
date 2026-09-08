@@ -22,13 +22,13 @@
     "mcp": "node --import tsx --env-file=.env.local mcp-server/index.ts"
   },
   "dependencies": {
-    "@ai-sdk/google": "^1.2.22",
-    "@ai-sdk/openai": "^1.0.0",
-    "@ai-sdk/react": "^1.0.0",
+    "@ai-sdk/google": "^4.0.64",
+    "@ai-sdk/openai": "^4.0.60",
+    "@ai-sdk/react": "^4.0.96",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@supabase/ssr": "^0.5.0",
     "@supabase/supabase-js": "^2.45.0",
-    "ai": "^4.0.0",
+    "ai": "^7.0.93",
     "next": "^16.0.0",
     "pdf-parse": "^1.1.1",
     "react": "^19.0.0",
